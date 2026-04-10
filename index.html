@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chairman — Club Owner Sim</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-block">
+        <h1>Chairman</h1>
+        <p class="tagline">Owner sim · English pyramid · climb the league, fill the coffers, grow the empire</p>
+      </div>
+      <div class="stats-bar" aria-label="Club finances">
+        <span class="stat-pill"><span class="lbl">Club</span> <strong id="club-name">—</strong></span>
+        <span class="stat-pill"><span class="lbl">League</span> <strong id="league-name">—</strong></span>
+        <span class="stat-pill"><span class="lbl">Season</span> <strong id="season-num">1</strong></span>
+        <span class="stat-pill"><span class="lbl">Week</span> <strong id="week-num">1</strong></span>
+        <span class="stat-pill"><span class="lbl">Cash</span> <strong id="cash">£0</strong></span>
+        <span class="stat-pill"><span class="lbl">Debt</span> <strong id="debt">£0</strong></span>
+        <span class="stat-pill"><span class="lbl">Wages</span> <strong id="wages">£0</strong></span>
+        <span class="stat-pill"><span class="lbl">Rep</span> <strong id="rep">0</strong></span>
+        <span class="stat-pill"><span class="lbl">Stadium</span> <strong id="capacity">0</strong></span>
+      </div>
+      <div class="actions-bar">
+        <button type="button" class="header-mail" id="btn-inbox" aria-haspopup="dialog">
+          Inbox <span id="inbox-badge" class="pill-count" hidden>0</span>
+        </button>
+        <button type="button" class="primary" id="btn-week">Advance week</button>
+        <button type="button" id="btn-new">New game</button>
+      </div>
+    </header>
+    <p class="fixture-strip" id="fixture-status"></p>
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" class="active" data-tab="dashboard">Dashboard</button>
+      <button type="button" data-tab="finances">Finances & stadium</button>
+      <button type="button" data-tab="staff">Staff</button>
+      <button type="button" data-tab="squad">Squad</button>
+      <button type="button" data-tab="transfers">Transfers</button>
+      <button type="button" data-tab="pyramid">Pyramid</button>
+      <button type="button" data-tab="sponsors">Sponsors</button>
+      <button type="button" data-tab="empire">Empire</button>
+    </nav>
+    <main id="tab-content"></main>
+
+    <div id="mailbox-overlay" class="app-overlay" hidden aria-hidden="true">
+      <div class="overlay-backdrop" data-close-mailbox tabindex="-1"></div>
+      <div class="mailbox-panel" role="dialog" aria-modal="true" aria-labelledby="mailbox-title">
+        <div class="mailbox-head">
+          <h2 id="mailbox-title">Club inbox</h2>
+          <p class="mailbox-sub muted">Staff notes and board decisions land here — same as club email.</p>
+          <button type="button" class="btn-icon" id="mailbox-close" aria-label="Close inbox">×</button>
+        </div>
+        <div id="mailbox-content" class="mailbox-content"></div>
+      </div>
+    </div>
+
+    <div id="matchday-overlay" class="app-overlay" hidden aria-hidden="true">
+      <div class="overlay-backdrop" data-close-matchday tabindex="-1"></div>
+      <div id="matchday-content" class="matchday-panel" role="dialog" aria-modal="true" aria-label="Match centre"></div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
