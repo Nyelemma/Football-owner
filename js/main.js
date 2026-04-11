@@ -9,6 +9,7 @@ import {
   PRE_SEASON_WEEKS,
 } from './game.js';
 import { ENGLISH_PYRAMID, FRANCHISE_REGIONS } from './leagues.js';
+import { getClubBadgeSvg } from './club-badges.js';
 
 const game = new Game();
 if (!game.load() || !game.state.table?.length) {
@@ -27,12 +28,15 @@ const els = {
   debt: $('#debt'),
   wages: $('#wages'),
   rep: $('#rep'),
-  capacity: $('#capacity'),
+  stadiumLine: $('#stadium-line'),
   fixture: $('#fixture-status'),
   main: $('#tab-content'),
   tabs: $$('.tabs button'),
+  btnHelp: $('#btn-help'),
   btnInbox: $('#btn-inbox'),
   inboxBadge: $('#inbox-badge'),
+  onboarding: $('#onboarding-overlay'),
+  help: $('#help-overlay'),
   mailboxOverlay: $('#mailbox-overlay'),
   mailboxContent: $('#mailbox-content'),
   mailboxClose: $('#mailbox-close'),
@@ -44,6 +48,82 @@ let mailboxOpen = false;
 let mailboxSelKey = '';
 let matchdayOpen = false;
 let matchdayTab = 'teams';
+let helpOpen = false;
+
+function matchCentreAvailable(state) {
+  const ph = state?.seasonPhase || 'competitive';
+  return !!(state?.lastMatchReport && ph !== 'off_season');
+}
+
+/** Header crest — during onboarding, follows the form (state updates on Start). */
+function syncClubBadge() {
+  const slot = $('#brand-crest-slot');
+  if (!slot) return;
+  const s = game.state;
+  let badgeId = s.clubBadgeId || 'classic';
+  let pri = s.clubColorPrimary || '#4ae8a5';
+  let sec = s.clubColorSecondary || '#2d9d6a';
+  if (!s.onboardingComplete) {
+    const checked = document.querySelector('#onboarding-overlay input[name="ob-badge"]:checked');
+    if (checked?.value) badgeId = checked.value;
+    const ca = $('#ob-color-a')?.value;
+    const cb = $('#ob-color-b')?.value;
+    if (ca && /^#[0-9A-Fa-f]{6}$/i.test(ca)) pri = ca;
+    if (cb && /^#[0-9A-Fa-f]{6}$/i.test(cb)) sec = cb;
+  }
+  slot.innerHTML = getClubBadgeSvg(badgeId, pri, sec);
+}
+
+function updateOnboardingKitPreview() {
+  const pri = $('#ob-color-a')?.value || game.state.clubColorPrimary || '#4ae8a5';
+  const sec = $('#ob-color-b')?.value || game.state.clubColorSecondary || '#2d9d6a';
+  const a = $('.ob-kit-a');
+  const b = $('.ob-kit-b');
+  if (a) a.style.background = pri;
+  if (b) b.style.background = sec;
+  $$('[data-badge-thumb]').forEach((el) => {
+    const id = el.getAttribute('data-badge-thumb');
+    if (!id) return;
+    el.innerHTML = getClubBadgeSvg(id, pri, sec).replace('width="44"', 'width="36"').replace('height="44"', 'height="36"');
+  });
+  syncClubBadge();
+}
+
+function syncOnboardingFormValues() {
+  const s = game.state;
+  const c = $('#ob-club');
+  const st = $('#ob-stadium');
+  const a = $('#ob-color-a');
+  const b = $('#ob-color-b');
+  if (c) c.value = s.clubName || '';
+  if (st) st.value = s.stadiumName || '';
+  if (a) a.value = s.clubColorPrimary || '#4ae8a5';
+  if (b) b.value = s.clubColorSecondary || '#2d9d6a';
+  const badge = s.clubBadgeId || 'classic';
+  $$('input[name="ob-badge"]').forEach((inp) => {
+    inp.checked = inp.value === badge;
+  });
+  updateOnboardingKitPreview();
+}
+
+function syncOnboardingOverlay() {
+  const el = els.onboarding;
+  if (!el) return;
+  const show = !game.state.onboardingComplete;
+  el.hidden = !show;
+  el.setAttribute('aria-hidden', show ? 'false' : 'true');
+  document.body.classList.toggle('onboarding-open', show);
+  if (show) {
+    syncOnboardingFormValues();
+  }
+}
+
+function syncHelpOverlay() {
+  const el = els.help;
+  if (!el) return;
+  el.hidden = !helpOpen;
+  el.setAttribute('aria-hidden', helpOpen ? 'false' : 'true');
+}
 
 /** Pyramid browser: league index + team id */
 let pyramidView = { league: null, teamId: '' };
@@ -229,13 +309,18 @@ function renderMatchdayHTML() {
       </div>`;
   }
 
+  const ctx =
+    r.kind === 'friendly'
+      ? `${r.leagueLabel} · Week ${r.matchweek} of ${PRE_SEASON_WEEKS}`
+      : `${r.leagueLabel} · Matchweek ${r.matchweek}`;
+
   return `
     <div class="matchday-inner">
       <div class="matchday-toolbar">
         <h2>Match centre</h2>
         <button type="button" class="btn-icon" id="matchday-close" aria-label="Close">×</button>
       </div>
-      <p class="matchday-ctx muted">${r.leagueLabel} · Matchweek ${r.matchweek}</p>
+      <p class="matchday-ctx muted">${ctx}</p>
       <div class="matchday-scoreboard">
         <div class="score-block"><span class="score-name">${r.homeName}</span><span class="score-num">${r.homeGoals}</span></div>
         <span class="score-sep">–</span>
@@ -267,7 +352,7 @@ function syncOverlays() {
     if (open && els.mailboxContent) els.mailboxContent.innerHTML = renderMailboxHTML();
   }
   if (els.matchdayOverlay) {
-    const show = matchdayOpen && !!game.state.lastMatchReport;
+    const show = matchdayOpen && matchCentreAvailable(game.state);
     els.matchdayOverlay.hidden = !show;
     els.matchdayOverlay.setAttribute('aria-hidden', show ? 'false' : 'true');
     if (show && els.matchdayContent) els.matchdayContent.innerHTML = renderMatchdayHTML();
@@ -365,7 +450,10 @@ function renderHeader() {
   els.debt.textContent = formatMoney(s.debt);
   els.wages.textContent = formatMoney(game.weeklyWageBill()) + '/wk';
   els.rep.textContent = s.reputation;
-  els.capacity.textContent = s.stadiumCapacity.toLocaleString();
+  if (els.stadiumLine) {
+    const sn = s.stadiumName || 'Stadium';
+    els.stadiumLine.textContent = `${sn} · ${s.stadiumCapacity.toLocaleString()} seats`;
+  }
   const rounds = s.leagueRounds || [];
   const ri = s.leagueRoundIndex ?? 0;
   const total = rounds.length;
@@ -440,11 +528,15 @@ function renderDashboard() {
       <h2>Club inbox</h2>
       <p class="muted" style="margin-top:-0.25rem">
         ${inboxN ? `You have <strong>${inboxN}</strong> message(s) — staff briefings and board decisions.` : 'No new messages. Hire staff to receive briefings; events arrive as the season unfolds.'}
-        ${s.lastMatchReport ? ' Latest league fixture has a <strong>match report</strong> ready.' : ''}
+        ${
+          matchCentreAvailable(s)
+            ? ' A <strong>match report</strong> is ready (league or pre-season friendly).'
+            : ''
+        }
       </p>
       <div class="row-actions" style="flex-wrap:wrap;gap:0.5rem">
         <button type="button" class="primary" id="open-inbox-dash">Open inbox</button>
-        ${s.lastMatchReport ? '<button type="button" id="open-matchday-dash">Match centre</button>' : ''}
+        ${matchCentreAvailable(s) ? '<button type="button" id="open-matchday-dash">Match centre</button>' : ''}
       </div>
     </div>
     <div class="panel board-panel">
@@ -630,7 +722,7 @@ function renderFinances() {
     </div>
     <div class="panel">
       <h2>Stadium expansion</h2>
-      <p>Capacity: <strong>${s.stadiumCapacity.toLocaleString()}</strong></p>
+      <p><strong>${s.stadiumName || 'Stadium'}</strong> — capacity <strong>${s.stadiumCapacity.toLocaleString()}</strong></p>
       <div class="row-actions">
         <button type="button" data-expand="500" data-cost="180000">+500 seats (${formatMoney(180000)})</button>
         <button type="button" data-expand="1500" data-cost="480000">+1,500 (${formatMoney(480000)})</button>
@@ -1196,6 +1288,15 @@ function wireTab() {
 function render() {
   renderHeader();
   wireTab();
+  syncOnboardingOverlay();
+  syncClubBadge();
+  syncHelpOverlay();
+  const locked = !game.state.onboardingComplete;
+  $('#btn-week')?.toggleAttribute('disabled', locked);
+  $('#btn-inbox')?.toggleAttribute('disabled', locked);
+  $('#btn-new')?.toggleAttribute('disabled', locked);
+  els.tabs?.forEach((t) => t.toggleAttribute('disabled', locked));
+  if (!matchCentreAvailable(game.state)) matchdayOpen = false;
   syncOverlays();
 }
 
@@ -1207,9 +1308,44 @@ els.tabs.forEach((b) => {
   });
 });
 
+$('#onboarding-start')?.addEventListener('click', () => {
+  const cn = $('#ob-club')?.value?.trim();
+  if (!cn) {
+    window.alert('Please enter a club name.');
+    return;
+  }
+  game.completeOnboarding({
+    clubName: cn,
+    stadiumName: $('#ob-stadium')?.value,
+    clubColorPrimary: $('#ob-color-a')?.value,
+    clubColorSecondary: $('#ob-color-b')?.value,
+  });
+  render();
+});
+
+$('#onboarding-overlay')?.addEventListener('input', (e) => {
+  if (e.target?.matches?.('#ob-color-a, #ob-color-b')) updateOnboardingKitPreview();
+});
+$('#onboarding-overlay')?.addEventListener('change', (e) => {
+  if (e.target?.matches?.('input[name="ob-badge"]')) updateOnboardingKitPreview();
+});
+
+$('#btn-help')?.addEventListener('click', () => {
+  helpOpen = true;
+  render();
+});
+$('#help-close')?.addEventListener('click', () => {
+  helpOpen = false;
+  render();
+});
+$('#help-backdrop')?.addEventListener('click', () => {
+  helpOpen = false;
+  render();
+});
+
 $('#btn-week')?.addEventListener('click', () => {
   game.advanceWeek();
-  if (game.state.lastMatchReport) {
+  if (matchCentreAvailable(game.state)) {
     matchdayOpen = true;
     matchdayTab = 'teams';
   }
@@ -1333,7 +1469,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   const mdt = e.target.closest('[data-mdtab]');
-  if (mdt && els.matchdayContent && matchdayOpen && game.state.lastMatchReport) {
+  if (mdt && els.matchdayContent && matchdayOpen && matchCentreAvailable(game.state)) {
     matchdayTab = mdt.getAttribute('data-mdtab') || 'teams';
     els.matchdayContent.innerHTML = renderMatchdayHTML();
     return;

@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Chairman — run a football club through the English pyramid. Finances, transfers, cups, and empire." />
     <title>Chairman — Club Owner Sim</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="styles.css" />
@@ -11,21 +13,27 @@
   <body>
     <header class="app-header">
       <div class="brand-block">
-        <h1>Chairman</h1>
-        <p class="tagline">Owner sim · English pyramid · climb the league, fill the coffers, grow the empire</p>
+        <div class="brand-row">
+          <div id="brand-crest-slot" class="brand-crest-slot" aria-hidden="true"></div>
+          <div>
+            <h1>Chairman</h1>
+            <p class="tagline">Owner sim · English pyramid · climb the league, fill the coffers, grow the empire</p>
+          </div>
+        </div>
       </div>
       <div class="stats-bar" aria-label="Club finances">
         <span class="stat-pill"><span class="lbl">Club</span> <strong id="club-name">—</strong></span>
         <span class="stat-pill"><span class="lbl">League</span> <strong id="league-name">—</strong></span>
+        <span class="stat-pill"><span class="lbl">Ground</span> <strong id="stadium-line">—</strong></span>
         <span class="stat-pill"><span class="lbl">Season</span> <strong id="season-num">1</strong></span>
         <span class="stat-pill"><span class="lbl">Week</span> <strong id="week-num">1</strong></span>
         <span class="stat-pill"><span class="lbl">Cash</span> <strong id="cash">£0</strong></span>
         <span class="stat-pill"><span class="lbl">Debt</span> <strong id="debt">£0</strong></span>
         <span class="stat-pill"><span class="lbl">Wages</span> <strong id="wages">£0</strong></span>
         <span class="stat-pill"><span class="lbl">Rep</span> <strong id="rep">0</strong></span>
-        <span class="stat-pill"><span class="lbl">Stadium</span> <strong id="capacity">0</strong></span>
       </div>
       <div class="actions-bar">
+        <button type="button" class="header-help" id="btn-help" title="How to play">Guide</button>
         <button type="button" class="header-mail" id="btn-inbox" aria-haspopup="dialog">
           Inbox <span id="inbox-badge" class="pill-count" hidden>0</span>
         </button>
@@ -35,16 +43,98 @@
     </header>
     <p class="fixture-strip" id="fixture-status"></p>
     <nav class="tabs" aria-label="Sections">
-      <button type="button" class="active" data-tab="dashboard">Dashboard</button>
-      <button type="button" data-tab="finances">Finances & stadium</button>
-      <button type="button" data-tab="staff">Staff</button>
-      <button type="button" data-tab="squad">Squad</button>
-      <button type="button" data-tab="transfers">Transfers</button>
-      <button type="button" data-tab="pyramid">Pyramid</button>
-      <button type="button" data-tab="sponsors">Sponsors</button>
-      <button type="button" data-tab="empire">Empire</button>
+      <button type="button" class="active" data-tab="dashboard"><span class="tab-ico" aria-hidden="true">📊</span> Dashboard</button>
+      <button type="button" data-tab="finances"><span class="tab-ico" aria-hidden="true">🏟️</span> Finances & stadium</button>
+      <button type="button" data-tab="staff"><span class="tab-ico" aria-hidden="true">👔</span> Staff</button>
+      <button type="button" data-tab="squad"><span class="tab-ico" aria-hidden="true">👥</span> Squad</button>
+      <button type="button" data-tab="transfers"><span class="tab-ico" aria-hidden="true">⚽</span> Transfers</button>
+      <button type="button" data-tab="pyramid"><span class="tab-ico" aria-hidden="true">🔺</span> Pyramid</button>
+      <button type="button" data-tab="sponsors"><span class="tab-ico" aria-hidden="true">🤝</span> Sponsors</button>
+      <button type="button" data-tab="empire"><span class="tab-ico" aria-hidden="true">🌍</span> Empire</button>
     </nav>
     <main id="tab-content"></main>
+
+    <div id="onboarding-overlay" class="app-overlay onboarding-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div class="onboarding-panel">
+        <div class="onboarding-hero">
+          <img src="assets/hero-pitch.svg" alt="" width="320" height="200" class="onboarding-hero-img" />
+        </div>
+        <div class="onboarding-body">
+          <h2 id="onboarding-title">Welcome to Chairman</h2>
+          <p class="lead">You’re the <strong>owner</strong> of a club in the English pyramid. There is no “match engine” to click each minute — time moves in <strong>weeks</strong>. Your job is the balance sheet, the squad, and the story you build.</p>
+
+          <h3 class="subhead">What you’re aiming for</h3>
+          <ul class="onboarding-list">
+            <li><strong>Climb the leagues</strong> — promotion and cups raise reputation and unlock better money.</li>
+            <li><strong>Stay solvent</strong> — wages, stadium upkeep, transfers and youth spend all hit cash; TV and gates bring it back.</li>
+            <li><strong>Keep stakeholders onside</strong> — fans, investors, and media react to results and your decisions.</li>
+            <li><strong>Grow off the pitch</strong> — sponsors, staff, satellite clubs, and franchise deals stack over seasons.</li>
+          </ul>
+
+          <h3 class="subhead">How a typical week works</h3>
+          <ol class="onboarding-list onboarding-ol">
+            <li>Click <strong>Advance week</strong> — finances tick (wages, TV, debt interest, etc.).</li>
+            <li>In season, you get <strong>league</strong> and <strong>cup</strong> results (cups can fall on separate weeks from league games).</li>
+            <li>Use <strong>Transfers</strong> to sign players on contracts; check <strong>Inbox</strong> for staff and board events.</li>
+            <li>Between seasons: <strong>off-season</strong> then <strong>pre-season</strong> weeks before fixtures resume.</li>
+          </ol>
+
+          <h3 class="subhead">Your club</h3>
+          <p class="muted small">Name your club and ground, choose a <strong>badge</strong> and <strong>kit colours</strong> (colours appear on your crest only — the game keeps the same look). Open <strong>Guide</strong> anytime.</p>
+          <div class="onboarding-form">
+            <label>Club name <input type="text" id="ob-club" maxlength="44" autocomplete="organization" /></label>
+            <label>Stadium name <input type="text" id="ob-stadium" maxlength="44" autocomplete="off" /></label>
+            <fieldset class="ob-badge-fieldset">
+              <legend class="ob-legend">Badge</legend>
+              <div class="ob-badge-grid" role="radiogroup" aria-label="Club badge shape">
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="classic" checked /> <span class="ob-badge-thumb" data-badge-thumb="classic"></span><span class="ob-badge-cap">Pitch</span></label>
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="shield" /> <span class="ob-badge-thumb" data-badge-thumb="shield"></span><span class="ob-badge-cap">Shield</span></label>
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="roundel" /> <span class="ob-badge-thumb" data-badge-thumb="roundel"></span><span class="ob-badge-cap">Roundel</span></label>
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="stripes" /> <span class="ob-badge-thumb" data-badge-thumb="stripes"></span><span class="ob-badge-cap">Stripes</span></label>
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="monogram" /> <span class="ob-badge-thumb" data-badge-thumb="monogram"></span><span class="ob-badge-cap">Monogram</span></label>
+                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="wings" /> <span class="ob-badge-thumb" data-badge-thumb="wings"></span><span class="ob-badge-cap">Wings</span></label>
+              </div>
+            </fieldset>
+            <div class="color-row">
+              <label>Kit primary <input type="color" id="ob-color-a" title="Primary kit colour" /></label>
+              <label>Kit secondary <input type="color" id="ob-color-b" title="Secondary kit colour" /></label>
+            </div>
+            <div class="ob-kit-preview" aria-hidden="true">
+              <span class="ob-kit-label">Crest preview</span>
+              <div class="ob-kit-stripes"><span class="ob-kit-a"></span><span class="ob-kit-b"></span></div>
+            </div>
+          </div>
+          <button type="button" class="primary onboarding-start" id="onboarding-start">Start your tenure</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="help-overlay" class="help-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="overlay-backdrop help-overlay-backdrop" id="help-backdrop" tabindex="-1"></div>
+      <div class="help-panel" role="document">
+        <div class="help-head">
+          <h2 id="help-title">How to play</h2>
+          <button type="button" class="btn-icon" id="help-close" aria-label="Close">×</button>
+        </div>
+        <div class="help-body">
+          <p><strong>Chairman</strong> is a long-form owner sim: advance time week by week, manage money and people, and climb from the lower leagues.</p>
+          <h3>Core loop</h3>
+          <ul>
+            <li><strong>Advance week</strong> runs the economy and (in season) fixtures.</li>
+            <li>Watch <strong>cash, debt, wages</strong> on the bar — crisis loans and naming rights exist if you’re stretched.</li>
+            <li><strong>Finances</strong> shows a weekly P&amp;L and season one-offs (transfers, youth, stadium build).</li>
+          </ul>
+          <h3>Football side</h3>
+          <ul>
+            <li><strong>Squad / Transfers</strong> — sign players on contracts; other clubs may bid for yours.</li>
+            <li><strong>Pyramid</strong> — scout and negotiate with other clubs’ players.</li>
+            <li><strong>Cups</strong> run on separate calendar steps from league games.</li>
+          </ul>
+          <h3>Between seasons</h3>
+          <p>After the league ends you get <strong>off-season</strong> and <strong>pre-season</strong> weeks (no league table pressure) before the next campaign.</p>
+        </div>
+      </div>
+    </div>
 
     <div id="mailbox-overlay" class="app-overlay" hidden aria-hidden="true">
       <div class="overlay-backdrop" data-close-mailbox tabindex="-1"></div>

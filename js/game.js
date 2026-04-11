@@ -27,6 +27,7 @@ import {
   ticketPriceFactor,
   CLUB_IDENTITIES,
 } from './club-meta.js';
+import { CLUB_BADGE_IDS } from './club-badges.js';
 
 const SAVE_KEY = 'football-chairman-save-v5';
 
@@ -343,6 +344,116 @@ function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, away
   };
 }
 
+function makeGuestLineup(rng) {
+  const posOrder = ['GK', 'DF', 'DF', 'DF', 'MF', 'MF', 'MF', 'MF', 'FW', 'FW', 'FW'];
+  return posOrder.map((pos) => ({
+    name: randomPlayerName(rng),
+    pos,
+    ovr: 45 + Math.floor(rng() * 18),
+  }));
+}
+
+function mapLineupRows(starters, bench) {
+  const startersM = sortLineupForDisplay(starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr }));
+  const benchM = (bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr }));
+  return { startersM, benchM };
+}
+
+/**
+ * Pre-season weekly friendly — same scoring vibe as _playFriendlyMatch but full match report for Match centre.
+ */
+function buildPreSeasonFriendlyReport(
+  state,
+  weekNum,
+  playerRet,
+  oppName,
+  oppStarters,
+  oppBench,
+  pGoals,
+  oGoals,
+  playerIsHome,
+  rngFeed
+) {
+  const clubName = state.table?.find((t) => t.isPlayer)?.name ?? 'Your club';
+  const rngOppGoals = mulberry32(state.seed + state.week * 72_104);
+  const oppMapped = mapLineupRows(oppStarters, oppBench);
+
+  let homeName;
+  let awayName;
+  let hGoals;
+  let aGoals;
+  let homeAssigns;
+  let awayAssigns;
+  let homeLineup;
+  let awayLineup;
+  let homeBench;
+  let awayBench;
+
+  if (playerIsHome) {
+    homeName = clubName;
+    awayName = oppName;
+    hGoals = pGoals;
+    aGoals = oGoals;
+    homeAssigns = playerRet?.goalAssignments || [];
+    awayAssigns = collectGoalAssignments(oppStarters, oGoals, rngOppGoals);
+    const pl = mapLineupRows(playerRet?.starters, playerRet?.bench);
+    homeLineup = pl.startersM;
+    awayLineup = oppMapped.startersM;
+    homeBench = pl.benchM;
+    awayBench = oppMapped.benchM;
+  } else {
+    homeName = oppName;
+    awayName = clubName;
+    hGoals = oGoals;
+    aGoals = pGoals;
+    homeAssigns = collectGoalAssignments(oppStarters, oGoals, rngOppGoals);
+    awayAssigns = playerRet?.goalAssignments || [];
+    const plAway = mapLineupRows(playerRet?.starters, playerRet?.bench);
+    homeLineup = oppMapped.startersM;
+    awayLineup = plAway.startersM;
+    homeBench = oppMapped.benchM;
+    awayBench = plAway.benchM;
+  }
+
+  const goals = buildChronologicalGoalEvents(homeName, awayName, homeAssigns, awayAssigns, rngFeed);
+  const feed = [];
+  feed.push({
+    phase: 'before',
+    minute: 0,
+    text: `Pre-season friendly ${weekNum}/${PRE_SEASON_WEEKS} — ${homeName} vs ${awayName}`,
+  });
+  feed.push({ phase: 'live', minute: 1, text: 'Kick-off (behind closed doors / limited crowd)' });
+  for (const g of goals) {
+    const tag = g.side === 'home' ? homeName : awayName;
+    feed.push({
+      phase: 'live',
+      minute: g.minute,
+      text: `${g.minute}' — GOAL ${tag}: ${g.scorer}${g.assist ? ` · assist ${g.assist}` : ''}`,
+    });
+  }
+  feed.push({
+    phase: 'after',
+    minute: 90,
+    text: `Full time — ${homeName} ${hGoals}–${aGoals} ${awayName}`,
+  });
+
+  return {
+    kind: 'friendly',
+    leagueLabel: 'Pre-season friendly',
+    matchweek: weekNum,
+    homeName,
+    awayName,
+    homeLineup,
+    awayLineup,
+    homeBench,
+    awayBench,
+    homeGoals: hGoals,
+    awayGoals: aGoals,
+    playerIsHome,
+    feed,
+  };
+}
+
 /**
  * How many divisions the buyer is BELOW the seller (higher index = lower tier).
  * Buyer NL North (5), seller PL (0) → gapDown = 5.
@@ -471,13 +582,18 @@ function defaultState() {
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 7,
+    version: 9,
     seed,
     week: 1,
     season: 1,
     seasonStartYear: 2025,
     leagueIndex: startLeague,
     clubName,
+    stadiumName: 'Marston Park',
+    clubColorPrimary: '#4ae8a5',
+    clubColorSecondary: '#2d9d6a',
+    clubBadgeId: 'classic',
+    onboardingComplete: false,
     cash: 420_000,
     debt: 0,
     stadiumCapacity: 2_800,
@@ -707,6 +823,19 @@ function migrateToV7(s) {
     s.scheduleStepIndex = s.scheduleStepIndex ?? 0;
   }
   s.version = 7;
+}
+
+function migrateToV8(s) {
+  if (s.stadiumName == null || String(s.stadiumName).trim() === '') s.stadiumName = 'Community Ground';
+  if (!s.clubColorPrimary || !/^#[0-9A-Fa-f]{6}$/.test(s.clubColorPrimary)) s.clubColorPrimary = '#4ae8a5';
+  if (!s.clubColorSecondary || !/^#[0-9A-Fa-f]{6}$/.test(s.clubColorSecondary)) s.clubColorSecondary = '#2d9d6a';
+  if (s.onboardingComplete === undefined) s.onboardingComplete = true;
+  s.version = 8;
+}
+
+function migrateToV9(s) {
+  if (!CLUB_BADGE_IDS.includes(s.clubBadgeId)) s.clubBadgeId = 'classic';
+  s.version = 9;
 }
 
 export class Game {
@@ -1067,6 +1196,51 @@ export class Game {
     });
   }
 
+  /** Weekly pre-season advance: simulate a friendly and attach a full Match centre report (not league). */
+  _simulatePreSeasonFriendlyAndReport() {
+    const s = this.state;
+    const rng = mulberry32(s.seed + s.week * 72_001);
+    const oppName = randomClubName(rng);
+    const oppStrength = 36 + rng() * 22;
+    const playerSquadAvg = s.squad.reduce((x, p) => x + p.ovr, 0) / Math.max(1, s.squad.length);
+    const pStr = playerSquadAvg + this.managerBonus() * 0.6 + rng() * 3;
+    const pGoals = Math.max(
+      0,
+      Math.round((pStr / 18) * (0.88 + rng() * 0.35) + (rng() - 0.4) * 2)
+    );
+    const oGoals = Math.max(
+      0,
+      Math.round((oppStrength / 18) * (0.85 + rng() * 0.35) + (rng() - 0.5) * 2)
+    );
+    const rngLine = mulberry32(s.seed + s.week * 72_003);
+    const oppStarters = makeGuestLineup(rngLine);
+    const oppBench = makeGuestLineup(mulberry32(s.seed + s.week * 72_004)).slice(0, 9);
+    const playerRet = recordSquadMatchStats(s.squad, pGoals, oGoals, rng, 'friendly');
+    const playerIsHome = rng() < 0.52;
+    const weekNum = PRE_SEASON_WEEKS - (s.phaseWeeksLeft ?? 0);
+    const rngFeed = mulberry32(s.seed + s.week * 72_099);
+    const row = this.playerRow();
+    const yn = row?.name || s.clubName;
+    s.lastMatchReport = buildPreSeasonFriendlyReport(
+      s,
+      weekNum,
+      playerRet,
+      oppName,
+      oppStarters,
+      oppBench,
+      pGoals,
+      oGoals,
+      playerIsHome,
+      rngFeed
+    );
+    const scoreTxt = playerIsHome ? `${yn} ${pGoals}-${oGoals} ${oppName}` : `${oppName} ${oGoals}-${pGoals} ${yn}`;
+    s.history.unshift({
+      week: s.week,
+      type: 'friendly',
+      text: `Pre-season friendly (${weekNum}/${PRE_SEASON_WEEKS}): ${scoreTxt}.`,
+    });
+  }
+
   _stadiumEventIncome() {
     const s = this.state;
     const cap = s.stadiumCapacity;
@@ -1197,12 +1371,16 @@ export class Game {
         this._endSeason();
       }
     } else {
+      if (phase === 'off_season') {
+        s.lastMatchReport = null;
+      }
       s.phaseWeeksLeft = Math.max(0, (s.phaseWeeksLeft || 0) - 1);
       let preGate = 0;
       if (phase === 'pre_season') {
         preGate = Math.floor(this.matchdayRevenue(0.06));
         s.cash += preGate;
         if (preGate) income.push({ label: 'Pre-season (gates & low-intensity friendlies)', amount: preGate });
+        this._simulatePreSeasonFriendlyAndReport();
       }
       if (s.phaseWeeksLeft <= 0) {
         if (phase === 'off_season') {
@@ -1286,7 +1464,7 @@ export class Game {
       s.history.unshift({
         week: s.week,
         type: 'event',
-        text: `Non-matchday event at the stadium (capacity ${s.stadiumCapacity.toLocaleString()}) — +£${payout.toLocaleString()}.`,
+        text: `Non-matchday event at ${s.stadiumName || 'the stadium'} (capacity ${s.stadiumCapacity.toLocaleString()}) — +£${payout.toLocaleString()}.`,
       });
     }
 
@@ -1469,6 +1647,7 @@ export class Game {
     s.leagueRoundIndex = 0;
     s.seasonPhase = 'off_season';
     s.phaseWeeksLeft = OFF_SEASON_WEEKS;
+    s.lastMatchReport = null;
     s.history.unshift({
       week: s.week,
       type: 'season',
@@ -1717,6 +1896,37 @@ export class Game {
       week: this.state.week,
       type: 'identity',
       text: `Board records club identity: ${def.label}.`,
+    });
+    this._emit();
+    this.save();
+    return true;
+  }
+
+  setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId } = {}) {
+    const s = this.state;
+    const trim = (x, max) => String(x ?? '').trim().slice(0, max);
+    const hexOk = (c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c.trim());
+    if (clubName != null && trim(clubName, 44)) {
+      s.clubName = trim(clubName, 44);
+      const row = s.table?.find((t) => t.isPlayer);
+      if (row) row.name = s.clubName;
+    }
+    if (stadiumName != null && trim(stadiumName, 44)) s.stadiumName = trim(stadiumName, 44);
+    if (clubColorPrimary != null && hexOk(clubColorPrimary)) s.clubColorPrimary = clubColorPrimary.trim();
+    if (clubColorSecondary != null && hexOk(clubColorSecondary)) s.clubColorSecondary = clubColorSecondary.trim();
+    if (clubBadgeId != null && CLUB_BADGE_IDS.includes(clubBadgeId)) s.clubBadgeId = clubBadgeId;
+    this._emit();
+    this.save();
+    return true;
+  }
+
+  completeOnboarding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId }) {
+    this.setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId });
+    this.state.onboardingComplete = true;
+    this.state.history.unshift({
+      week: this.state.week,
+      type: 'season',
+      text: `Welcome to ${this.state.clubName} — your tenure at ${this.state.stadiumName} begins.`,
     });
     this._emit();
     this.save();
@@ -2119,6 +2329,10 @@ export class Game {
     const newName = randomClubName(mulberry32(seed + 17));
     this.state.seed = seed;
     this.state.clubName = newName;
+    this.state.stadiumName = `${newName.split(/\s+/)[0] || 'Municipal'} Park`;
+    this.state.clubBadgeId = 'classic';
+    this.state.clubColorPrimary = '#4ae8a5';
+    this.state.clubColorSecondary = '#2d9d6a';
     this.state.leagueIndex = Math.min(ENGLISH_PYRAMID.length - 1, this.state.leagueIndex + 2);
     let nt = makeLeagueTeams(this.state.leagueIndex, newName, seed);
     this.state.table = attachSquadsToTable(nt, this.state.leagueIndex, seed);
@@ -2146,6 +2360,7 @@ export class Game {
     this._refreshTransferMarket();
     this._buildFixturesIfNeeded();
     this.state.identityChangeDeadlineWeek = this.state.week + 3;
+    this.state.onboardingComplete = false;
     this._emit();
     this.save();
   }
@@ -2266,6 +2481,8 @@ export class Game {
         migrateToV5(this.state);
         migrateToV6(this.state);
         migrateToV7(this.state);
+        migrateToV8(this.state);
+        migrateToV9(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);

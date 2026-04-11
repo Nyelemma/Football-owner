@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Chairman">
+  <rect width="32" height="32" rx="6" fill="#0f1f18"/>
+  <ellipse cx="16" cy="17" rx="12" ry="7" fill="none" stroke="#4ae8a5" stroke-width="1.5"/>
+  <circle cx="16" cy="17" r="2.5" fill="#4ae8a5"/>
+  <path d="M16 6v4M10 9h12" stroke="#2d9d6a" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

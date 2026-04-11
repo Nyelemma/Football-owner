@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a2e28"/>
+      <stop offset="100%" stop-color="#0a100e"/>
+    </linearGradient>
+    <linearGradient id="pitch" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a3d2e"/>
+      <stop offset="100%" stop-color="#0f241c"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" fill="url(#sky)"/>
+  <ellipse cx="160" cy="128" rx="130" ry="58" fill="url(#pitch)" stroke="var(--accent, #4ae8a5)" stroke-width="2" opacity="0.9"/>
+  <ellipse cx="160" cy="128" rx="42" ry="18" stroke="rgba(255,255,255,0.15)" stroke-width="1.2"/>
+  <circle cx="160" cy="128" r="4" fill="rgba(255,255,255,0.2)"/>
+  <rect x="20" y="40" width="56" height="28" rx="4" fill="#121a17" stroke="var(--accent-dim, #2d9d6a)" stroke-width="1"/>
+  <rect x="244" y="36" width="56" height="32" rx="4" fill="#121a17" stroke="var(--accent-dim, #2d9d6a)" stroke-width="1"/>
+  <rect x="100" y="22" width="120" height="14" rx="2" fill="#182320" opacity="0.9"/>
+</svg>
