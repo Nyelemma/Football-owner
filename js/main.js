@@ -3,6 +3,7 @@ import {
   STAFF_ROLES,
   SPONSOR_TIERS,
   getStaffHireCost,
+  staffWeeklyWageEstimate,
   getSponsorTierPayment,
   playerAvgRating,
   CLUB_IDENTITIES,
@@ -767,27 +768,32 @@ function renderStaff() {
   return `
     <div class="panel">
       <h2>Staff</h2>
-      <p class="muted">Signing fee and weekly wage both rise with quality and scale to the division — top-flight backroom hires can run into millions, while non-league staff cost a fraction of that. Pick a level before hiring.</p>
+      <p class="muted">One-off signing fee plus an ongoing <strong>weekly wage</strong> — both scale with quality and your division. Non-league staff cost a few hundred a week, top-flight hires run into six figures. Pick a quality level before hiring.</p>
       ${STAFF_ROLES.map((r) => {
         const st = game.state.staff[r.id];
         const li = game.state.leagueIndex;
         const q3cost = getStaffHireCost(r.id, 3, li);
+        const q3wage = staffWeeklyWageEstimate(r.id, 3, li);
         return `
         <div class="staff-card">
           <div>
             <strong>${r.label}</strong><br/>
-            <span class="muted">${st.hired ? `${st.name || 'Staff'} — ${formatMoney(st.wage)}/wk, quality ${st.quality}${r.id === 'manager' && st.traits?.length ? ` · ${st.traits.join(', ')}` : ''}` : 'Vacant'}</span>
+            <span class="muted">${
+              st.hired
+                ? `${st.name || 'Staff'} — weekly wage <strong>${formatMoney(st.wage)}</strong>, quality ${st.quality}${r.id === 'manager' && st.traits?.length ? ` · ${st.traits.join(', ')}` : ''}`
+                : `Vacant — quality 3 here costs <strong>${formatMoney(q3cost)}</strong> to sign, then weekly wage <strong>${formatMoney(q3wage)}</strong>`
+            }</span>
           </div>
           <div class="row-actions">
             ${
               st.hired
                 ? `<button type="button" data-fire="${r.id}">Release</button>`
                 : `<select data-hire-role="${r.id}" id="q-${r.id}">
-                    <option value="1">Quality 1 (${formatMoney(getStaffHireCost(r.id, 1, li))})</option>
-                    <option value="2">2 (${formatMoney(getStaffHireCost(r.id, 2, li))})</option>
-                    <option value="3" selected>3 (${formatMoney(getStaffHireCost(r.id, 3, li))})</option>
-                    <option value="4">4 (${formatMoney(getStaffHireCost(r.id, 4, li))})</option>
-                    <option value="5">5 (${formatMoney(getStaffHireCost(r.id, 5, li))})</option>
+                    <option value="1">Quality 1 — sign ${formatMoney(getStaffHireCost(r.id, 1, li))} · weekly ${formatMoney(staffWeeklyWageEstimate(r.id, 1, li))}</option>
+                    <option value="2">Quality 2 — sign ${formatMoney(getStaffHireCost(r.id, 2, li))} · weekly ${formatMoney(staffWeeklyWageEstimate(r.id, 2, li))}</option>
+                    <option value="3" selected>Quality 3 — sign ${formatMoney(getStaffHireCost(r.id, 3, li))} · weekly ${formatMoney(q3wage)}</option>
+                    <option value="4">Quality 4 — sign ${formatMoney(getStaffHireCost(r.id, 4, li))} · weekly ${formatMoney(staffWeeklyWageEstimate(r.id, 4, li))}</option>
+                    <option value="5">Quality 5 — sign ${formatMoney(getStaffHireCost(r.id, 5, li))} · weekly ${formatMoney(staffWeeklyWageEstimate(r.id, 5, li))}</option>
                   </select>
                   <button type="button" class="staff-hire-btn" data-hire="${r.id}">Hire for ${formatMoney(q3cost)}</button>`
             }

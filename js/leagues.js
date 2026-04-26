@@ -12,37 +12,37 @@ const LEAGUE_ECONOMIES = {
   pl: {
     avgWeeklyWage: 70_000, topWeeklyWage: 250_000, baseWeeklyWage: 8_000,
     feeMultiplier: 120, freeTransferRate: 0.04,
-    sponsorAnchor: 3_000_000, staffMultiplier: 10,
+    sponsorAnchor: 3_000_000, staffMultiplier: 200,
     tvBonusPerWeek: 2_400_000, startingCash: 80_000_000,
   },
   ch: {
     avgWeeklyWage: 12_000, topWeeklyWage: 45_000, baseWeeklyWage: 1_800,
     feeMultiplier: 70, freeTransferRate: 0.18,
-    sponsorAnchor: 600_000, staffMultiplier: 3,
+    sponsorAnchor: 600_000, staffMultiplier: 35,
     tvBonusPerWeek: 200_000, startingCash: 8_000_000,
   },
   l1: {
     avgWeeklyWage: 2_800, topWeeklyWage: 7_500, baseWeeklyWage: 700,
     feeMultiplier: 25, freeTransferRate: 0.35,
-    sponsorAnchor: 120_000, staffMultiplier: 1.4,
+    sponsorAnchor: 120_000, staffMultiplier: 10,
     tvBonusPerWeek: 18_000, startingCash: 1_200_000,
   },
   l2: {
     avgWeeklyWage: 1_200, topWeeklyWage: 3_200, baseWeeklyWage: 350,
     feeMultiplier: 10, freeTransferRate: 0.5,
-    sponsorAnchor: 45_000, staffMultiplier: 0.9,
+    sponsorAnchor: 45_000, staffMultiplier: 3.5,
     tvBonusPerWeek: 6_000, startingCash: 500_000,
   },
   nl: {
     avgWeeklyWage: 600, topWeeklyWage: 1_500, baseWeeklyWage: 200,
     feeMultiplier: 5, freeTransferRate: 0.75,
-    sponsorAnchor: 20_000, staffMultiplier: 0.6,
+    sponsorAnchor: 20_000, staffMultiplier: 1.7,
     tvBonusPerWeek: 1_400, startingCash: 200_000,
   },
   nln: {
     avgWeeklyWage: 350, topWeeklyWage: 800, baseWeeklyWage: 150,
     feeMultiplier: 3, freeTransferRate: 0.95,
-    sponsorAnchor: 10_000, staffMultiplier: 0.45,
+    sponsorAnchor: 10_000, staffMultiplier: 1,
     tvBonusPerWeek: 260, startingCash: 120_000,
   },
 };

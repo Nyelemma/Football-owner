@@ -39,16 +39,17 @@ const OFF_SEASON_WEEKS = 6;
 const PRE_SEASON_WEEKS = 5;
 
 /**
- * Base values are the National League North reference (staffMultiplier = 0.45).
- * The actual per-tier wage/fee is derived by multiplying by `econ.staffMultiplier / 0.45`,
- * so a Premier League manager (multiplier 10) earns ~22x the NL North baseline.
+ * Base values are anchored to National League North/South (staffMultiplier = 1.0 reference).
+ * Per-tier wage/fee scales linearly with `econ.staffMultiplier`, giving a realistic ~200x
+ * spread between a Premier League manager (~£100–200k/wk) and a National League N/S manager
+ * (~£400–1.5k/wk). Hire cost ≈ a few weeks of wages, scaled the same way.
  */
-const STAFF_BASE_DIVISOR = 0.45;
+const STAFF_BASE_DIVISOR = 1;
 const STAFF_ROLES = [
-  { id: 'manager', label: 'First-team manager', baseWeekly: 8_000, qualityCap: 5, hireCost: 25_000 },
-  { id: 'dof', label: 'Director of football', baseWeekly: 5_500, qualityCap: 5, hireCost: 18_000 },
-  { id: 'head_scout', label: 'Head of recruitment', baseWeekly: 3_200, qualityCap: 5, hireCost: 12_000 },
-  { id: 'commercial', label: 'Commercial director', baseWeekly: 2_800, qualityCap: 5, hireCost: 10_000 },
+  { id: 'manager', label: 'First-team manager', baseWeekly: 600, qualityCap: 5, hireCost: 1_500 },
+  { id: 'dof', label: 'Director of football', baseWeekly: 200, qualityCap: 5, hireCost: 600 },
+  { id: 'head_scout', label: 'Head of recruitment', baseWeekly: 80, qualityCap: 5, hireCost: 250 },
+  { id: 'commercial', label: 'Commercial director', baseWeekly: 50, qualityCap: 5, hireCost: 180 },
 ];
 
 function staffEconMult(leagueIndex) {
@@ -60,13 +61,20 @@ function staffEconMult(leagueIndex) {
 export function getStaffHireCost(roleId, quality, leagueIndex) {
   const def = STAFF_ROLES.find((r) => r.id === roleId);
   if (!def || quality < 1 || quality > def.qualityCap) return 0;
-  const mult = 0.38 + quality * 0.285;
+  const mult = 0.55 + quality * 0.22;
   return Math.round(def.hireCost * mult * staffEconMult(leagueIndex));
 }
 
 function staffWeeklyWage(def, quality, leagueIndex) {
-  const mult = 0.48 + quality * 0.235;
+  const mult = 0.6 + quality * 0.2;
   return Math.round(def.baseWeekly * mult * staffEconMult(leagueIndex));
+}
+
+/** Public helper for UI: weekly wage estimate by role id, quality (1–5), and division. */
+export function staffWeeklyWageEstimate(roleId, quality, leagueIndex) {
+  const def = STAFF_ROLES.find((r) => r.id === roleId);
+  if (!def || quality < 1 || quality > def.qualityCap) return 0;
+  return staffWeeklyWage(def, quality, leagueIndex);
 }
 
 /**
@@ -636,7 +644,7 @@ function defaultState() {
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 10,
+    version: 11,
     seed,
     week: 1,
     season: 1,
@@ -967,6 +975,24 @@ function migrateToV10(s) {
   if (legacyBadgeMap[s.clubBadgeId]) s.clubBadgeId = legacyBadgeMap[s.clubBadgeId];
   if (!s.clubKitId) s.clubKitId = 'royal-stripes';
   s.version = 10;
+}
+
+/**
+ * v11 — staff economy rebalance: realistic NL N/S anchors and a wider per-tier spread,
+ * so a non-league manager costs ~£500/wk and a Premier League manager ~£100–200k/wk.
+ * Recompute wages on hired staff so old saves pick up the new tariffs immediately.
+ */
+function migrateToV11(s) {
+  if ((s.version || 0) >= 11) return;
+  if (s.staff) {
+    for (const role of STAFF_ROLES) {
+      const cur = s.staff[role.id];
+      if (cur?.hired) {
+        cur.wage = staffWeeklyWage(role, cur.quality || 1, s.leagueIndex);
+      }
+    }
+  }
+  s.version = 11;
 }
 
 export class Game {
@@ -2628,6 +2654,7 @@ export class Game {
         migrateToV8(this.state);
         migrateToV9(this.state);
         migrateToV10(this.state);
+        migrateToV11(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);
