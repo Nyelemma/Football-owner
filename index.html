@@ -57,7 +57,7 @@
     <div id="onboarding-overlay" class="app-overlay onboarding-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       <div class="onboarding-panel">
         <div class="onboarding-hero">
-          <img src="assets/hero-pitch.svg" alt="" width="320" height="200" class="onboarding-hero-img" />
+          <img src="assets/art/hero-pitch.png" alt="" width="320" height="200" class="onboarding-hero-img" loading="eager" />
         </div>
         <div class="onboarding-body">
           <h2 id="onboarding-title">Welcome to Chairman</h2>
@@ -80,28 +80,27 @@
           </ol>
 
           <h3 class="subhead">Your club</h3>
-          <p class="muted small">Name your club and ground, choose a <strong>badge</strong> and <strong>kit colours</strong> (colours appear on your crest only — the game keeps the same look). Open <strong>Guide</strong> anytime.</p>
+          <p class="muted small">Name your club and ground, then pick a <strong>badge</strong> and <strong>kit</strong> from the gallery. Each design comes pre-coloured — what you see is what your club will wear.</p>
           <div class="onboarding-form">
             <label>Club name <input type="text" id="ob-club" maxlength="44" autocomplete="organization" /></label>
             <label>Stadium name <input type="text" id="ob-stadium" maxlength="44" autocomplete="off" /></label>
-            <fieldset class="ob-badge-fieldset">
-              <legend class="ob-legend">Badge</legend>
-              <div class="ob-badge-grid" role="radiogroup" aria-label="Club badge shape">
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="classic" checked /> <span class="ob-badge-thumb" data-badge-thumb="classic"></span><span class="ob-badge-cap">Pitch</span></label>
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="shield" /> <span class="ob-badge-thumb" data-badge-thumb="shield"></span><span class="ob-badge-cap">Shield</span></label>
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="roundel" /> <span class="ob-badge-thumb" data-badge-thumb="roundel"></span><span class="ob-badge-cap">Roundel</span></label>
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="stripes" /> <span class="ob-badge-thumb" data-badge-thumb="stripes"></span><span class="ob-badge-cap">Stripes</span></label>
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="monogram" /> <span class="ob-badge-thumb" data-badge-thumb="monogram"></span><span class="ob-badge-cap">Monogram</span></label>
-                <label class="ob-badge-label"><input type="radio" name="ob-badge" value="wings" /> <span class="ob-badge-thumb" data-badge-thumb="wings"></span><span class="ob-badge-cap">Wings</span></label>
-              </div>
+            <fieldset class="ob-gallery-fieldset">
+              <legend class="ob-legend">Pick a club badge</legend>
+              <div id="ob-badge-grid" class="ob-gallery ob-gallery-badges" role="radiogroup" aria-label="Club badge"></div>
             </fieldset>
-            <div class="color-row">
-              <label>Kit primary <input type="color" id="ob-color-a" title="Primary kit colour" /></label>
-              <label>Kit secondary <input type="color" id="ob-color-b" title="Secondary kit colour" /></label>
-            </div>
-            <div class="ob-kit-preview" aria-hidden="true">
-              <span class="ob-kit-label">Crest preview</span>
-              <div class="ob-kit-stripes"><span class="ob-kit-a"></span><span class="ob-kit-b"></span></div>
+            <fieldset class="ob-gallery-fieldset">
+              <legend class="ob-legend">Pick a home kit</legend>
+              <div id="ob-kit-grid" class="ob-gallery ob-gallery-kits" role="radiogroup" aria-label="Home kit"></div>
+            </fieldset>
+            <div class="ob-selection-preview" aria-hidden="true">
+              <div class="ob-preview-card">
+                <span class="ob-preview-label">Selected badge</span>
+                <div id="ob-preview-badge" class="ob-preview-image ob-preview-badge"></div>
+              </div>
+              <div class="ob-preview-card">
+                <span class="ob-preview-label">Selected kit</span>
+                <div id="ob-preview-kit" class="ob-preview-image ob-preview-kit"></div>
+              </div>
             </div>
           </div>
           <button type="button" class="primary onboarding-start" id="onboarding-start">Start your tenure</button>

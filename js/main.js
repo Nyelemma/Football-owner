@@ -3,13 +3,14 @@ import {
   STAFF_ROLES,
   SPONSOR_TIERS,
   getStaffHireCost,
+  getSponsorTierPayment,
   playerAvgRating,
   CLUB_IDENTITIES,
   OFF_SEASON_WEEKS,
   PRE_SEASON_WEEKS,
 } from './game.js';
 import { ENGLISH_PYRAMID, FRANCHISE_REGIONS } from './leagues.js';
-import { getClubBadgeSvg } from './club-badges.js';
+import { getClubBadgeSvg, CLUB_BADGES, CLUB_KITS, getBadge, getKit } from './club-badges.js';
 
 const game = new Game();
 if (!game.load() || !game.state.table?.length) {
@@ -55,54 +56,77 @@ function matchCentreAvailable(state) {
   return !!(state?.lastMatchReport && ph !== 'off_season');
 }
 
-/** Header crest — during onboarding, follows the form (state updates on Start). */
+/**
+ * Header crest — during onboarding, mirrors the active gallery selection so the user can see
+ * their pick on the header before saving. After onboarding it just renders state.clubBadgeId.
+ */
 function syncClubBadge() {
   const slot = $('#brand-crest-slot');
   if (!slot) return;
   const s = game.state;
-  let badgeId = s.clubBadgeId || 'classic';
-  let pri = s.clubColorPrimary || '#4ae8a5';
-  let sec = s.clubColorSecondary || '#2d9d6a';
+  let badgeId = s.clubBadgeId || CLUB_BADGES[0].id;
   if (!s.onboardingComplete) {
-    const checked = document.querySelector('#onboarding-overlay input[name="ob-badge"]:checked');
-    if (checked?.value) badgeId = checked.value;
-    const ca = $('#ob-color-a')?.value;
-    const cb = $('#ob-color-b')?.value;
-    if (ca && /^#[0-9A-Fa-f]{6}$/i.test(ca)) pri = ca;
-    if (cb && /^#[0-9A-Fa-f]{6}$/i.test(cb)) sec = cb;
+    const active = document.querySelector('#ob-badge-grid [aria-pressed="true"]');
+    if (active?.dataset.badge) badgeId = active.dataset.badge;
   }
-  slot.innerHTML = getClubBadgeSvg(badgeId, pri, sec);
+  slot.innerHTML = getClubBadgeSvg(badgeId);
+}
+
+function renderOnboardingGalleries() {
+  const badgeGrid = $('#ob-badge-grid');
+  const kitGrid = $('#ob-kit-grid');
+  if (badgeGrid && !badgeGrid.dataset.hydrated) {
+    badgeGrid.innerHTML = CLUB_BADGES.map(
+      (b) => `
+      <button type="button" class="ob-gallery-item ob-gallery-badge" data-badge="${b.id}" aria-pressed="false" aria-label="${b.label}">
+        <img src="${b.src}" alt="${b.label}" loading="lazy" />
+        <span class="ob-gallery-cap">${b.label}</span>
+      </button>
+    `
+    ).join('');
+    badgeGrid.dataset.hydrated = '1';
+  }
+  if (kitGrid && !kitGrid.dataset.hydrated) {
+    kitGrid.innerHTML = CLUB_KITS.map(
+      (k) => `
+      <button type="button" class="ob-gallery-item ob-gallery-kit" data-kit="${k.id}" aria-pressed="false" aria-label="${k.label}">
+        <img src="${k.src}" alt="${k.label}" loading="lazy" />
+        <span class="ob-gallery-cap">${k.label}</span>
+      </button>
+    `
+    ).join('');
+    kitGrid.dataset.hydrated = '1';
+  }
 }
 
 function updateOnboardingKitPreview() {
-  const pri = $('#ob-color-a')?.value || game.state.clubColorPrimary || '#4ae8a5';
-  const sec = $('#ob-color-b')?.value || game.state.clubColorSecondary || '#2d9d6a';
-  const a = $('.ob-kit-a');
-  const b = $('.ob-kit-b');
-  if (a) a.style.background = pri;
-  if (b) b.style.background = sec;
-  $$('[data-badge-thumb]').forEach((el) => {
-    const id = el.getAttribute('data-badge-thumb');
-    if (!id) return;
-    el.innerHTML = getClubBadgeSvg(id, pri, sec).replace('width="44"', 'width="36"').replace('height="44"', 'height="36"');
-  });
+  const badgeId = document.querySelector('#ob-badge-grid [aria-pressed="true"]')?.dataset.badge || game.state.clubBadgeId || CLUB_BADGES[0].id;
+  const kitId = document.querySelector('#ob-kit-grid [aria-pressed="true"]')?.dataset.kit || game.state.clubKitId || CLUB_KITS[0].id;
+  const badge = getBadge(badgeId);
+  const kit = getKit(kitId);
+  const bp = $('#ob-preview-badge');
+  const kp = $('#ob-preview-kit');
+  if (bp) bp.innerHTML = `<img src="${badge.src}" alt="${badge.label}" />`;
+  if (kp) kp.innerHTML = `<img src="${kit.src}" alt="${kit.label}" />`;
   syncClubBadge();
+}
+
+function setActiveGallery(grid, attr, value) {
+  if (!grid) return;
+  grid.querySelectorAll('[aria-pressed]').forEach((el) => {
+    el.setAttribute('aria-pressed', el.dataset[attr] === value ? 'true' : 'false');
+  });
 }
 
 function syncOnboardingFormValues() {
   const s = game.state;
   const c = $('#ob-club');
   const st = $('#ob-stadium');
-  const a = $('#ob-color-a');
-  const b = $('#ob-color-b');
   if (c) c.value = s.clubName || '';
   if (st) st.value = s.stadiumName || '';
-  if (a) a.value = s.clubColorPrimary || '#4ae8a5';
-  if (b) b.value = s.clubColorSecondary || '#2d9d6a';
-  const badge = s.clubBadgeId || 'classic';
-  $$('input[name="ob-badge"]').forEach((inp) => {
-    inp.checked = inp.value === badge;
-  });
+  renderOnboardingGalleries();
+  setActiveGallery($('#ob-badge-grid'), 'badge', s.clubBadgeId || CLUB_BADGES[0].id);
+  setActiveGallery($('#ob-kit-grid'), 'kit', s.clubKitId || CLUB_KITS[0].id);
   updateOnboardingKitPreview();
 }
 
@@ -581,7 +605,7 @@ function renderDashboard() {
                 (t, i) => `
               <tr class="${t.isPlayer ? 'player-row' : ''}">
                 <td>${i + 1}</td>
-                <td>${t.name}${t.isPlayer ? ' (you)' : ''}</td>
+                <td>${i === 0 ? '<img src="assets/art/trophy-league.png" alt="" class="trophy-icon" /> ' : ''}${t.name}${t.isPlayer ? ' (you)' : ''}</td>
                 <td>${t.played}</td><td>${t.won}</td><td>${t.drawn}</td><td>${t.lost}</td>
                 <td>${t.goalsFor}</td><td>${t.goalsAgainst}</td><td>${t.points}</td>
               </tr>`
@@ -604,9 +628,9 @@ function renderDashboard() {
           <div class="mini"><span class="muted">League position</span><strong>${pos} / ${s.table.length}</strong></div>
           <div class="mini"><span class="muted">League progress</span><strong>${Math.min(s.leagueRoundIndex ?? 0, s.leagueRounds?.length ?? 0)} / ${s.leagueRounds?.length ?? 0} rounds</strong></div>
           <div class="mini"><span class="muted">Calendar (league + cups)</span><strong>${Math.min(s.scheduleStepIndex ?? 0, (s.scheduleSteps || []).length)} / ${(s.scheduleSteps || []).length || '—'}</strong></div>
-          <div class="mini"><span class="muted">FA Cup</span><strong>${fa?.done ? `Finished (${fa.roundsWon} ties)` : 'Live'}</strong></div>
-          <div class="mini"><span class="muted">FA Trophy</span><strong>${!tr?.active ? '—' : tr.done ? 'Out' : 'Live'}</strong></div>
-          <div class="mini"><span class="muted">FA Vase</span><strong>${!vz?.active ? '—' : vz.done ? 'Out' : 'Live'}</strong></div>
+          <div class="mini"><span class="muted cup-row-icon"><img src="assets/art/trophy-fa-cup.png" alt="" class="trophy-icon" />FA Cup</span><strong>${fa?.done ? `Finished (${fa.roundsWon} ties)` : 'Live'}</strong></div>
+          <div class="mini"><span class="muted cup-row-icon"><img src="assets/art/trophy-fa-trophy.png" alt="" class="trophy-icon" />FA Trophy</span><strong>${!tr?.active ? '—' : tr.done ? 'Out' : 'Live'}</strong></div>
+          <div class="mini"><span class="muted cup-row-icon"><img src="assets/art/trophy-fa-vase.png" alt="" class="trophy-icon" />FA Vase</span><strong>${!vz?.active ? '—' : vz.done ? 'Out' : 'Live'}</strong></div>
           <div class="mini"><span class="muted">Atmosphere</span><strong>${s.atmosphere ?? '—'}</strong></div>
         </div>
         <p style="margin-top:1rem">Ticket price: <strong>${formatMoney(s.ticketPrice)}</strong> per seat (price affects attendance & fans)</p>
@@ -680,8 +704,9 @@ function renderFinances() {
   return `
     ${calmFin ? `<div class="panel"><h2>Season rhythm</h2>${calmFinLine}</div>` : ''}
     <div class="panel">
+      <img src="assets/art/stadium.png" alt="${s.stadiumName || 'Club stadium'}" class="stadium-illustration" />
       <h2>Weekly profit &amp; loss</h2>
-      <p class="muted">Last processed week includes squad wages, staff wages, stadium upkeep, match &amp; TV income, multi-club dividends, debt interest, and cup / friendly cash (net).</p>
+      <p class="muted">Last processed week includes squad wages, staff wages, stadium upkeep, match &amp; TV income, multi-club dividends, debt interest, and cup / friendly cash (net). Wages are paid weekly, transfer fees and sponsor lump sums are one-offs.</p>
       ${plRows}
     </div>
     <div class="panel">
@@ -742,10 +767,11 @@ function renderStaff() {
   return `
     <div class="panel">
       <h2>Staff</h2>
-      <p class="muted">Signing fee and weekly wage both rise with quality. Pick a level before hiring.</p>
+      <p class="muted">Signing fee and weekly wage both rise with quality and scale to the division — top-flight backroom hires can run into millions, while non-league staff cost a fraction of that. Pick a level before hiring.</p>
       ${STAFF_ROLES.map((r) => {
         const st = game.state.staff[r.id];
-        const q3cost = getStaffHireCost(r.id, 3);
+        const li = game.state.leagueIndex;
+        const q3cost = getStaffHireCost(r.id, 3, li);
         return `
         <div class="staff-card">
           <div>
@@ -757,11 +783,11 @@ function renderStaff() {
               st.hired
                 ? `<button type="button" data-fire="${r.id}">Release</button>`
                 : `<select data-hire-role="${r.id}" id="q-${r.id}">
-                    <option value="1">Quality 1 (${formatMoney(getStaffHireCost(r.id, 1))})</option>
-                    <option value="2">2 (${formatMoney(getStaffHireCost(r.id, 2))})</option>
-                    <option value="3" selected>3 (${formatMoney(getStaffHireCost(r.id, 3))})</option>
-                    <option value="4">4 (${formatMoney(getStaffHireCost(r.id, 4))})</option>
-                    <option value="5">5 (${formatMoney(getStaffHireCost(r.id, 5))})</option>
+                    <option value="1">Quality 1 (${formatMoney(getStaffHireCost(r.id, 1, li))})</option>
+                    <option value="2">2 (${formatMoney(getStaffHireCost(r.id, 2, li))})</option>
+                    <option value="3" selected>3 (${formatMoney(getStaffHireCost(r.id, 3, li))})</option>
+                    <option value="4">4 (${formatMoney(getStaffHireCost(r.id, 4, li))})</option>
+                    <option value="5">5 (${formatMoney(getStaffHireCost(r.id, 5, li))})</option>
                   </select>
                   <button type="button" class="staff-hire-btn" data-hire="${r.id}">Hire for ${formatMoney(q3cost)}</button>`
             }
@@ -842,7 +868,7 @@ function renderTransfers() {
   return `
     <div class="panel">
       <h2>Incoming bids (other clubs)</h2>
-      <p class="muted">AI clubs may table offers for your players. Accept to bank the fee and remove the player (min. 16 squad players).</p>
+      <p class="muted">AI clubs may table offers for your players — bids scale to the buyer's division (Premier League suitors can bid £5–40m, lower-league clubs bid in five figures). Accept to bank the fee and remove the player (min. 16 squad players).</p>
       <table>
         <thead><tr><th>Player</th><th>From</th><th>Bid</th><th>Expires</th><th></th></tr></thead>
         <tbody>
@@ -870,7 +896,7 @@ function renderTransfers() {
     </div>
     <div class="panel">
       <h2>Permanent transfers</h2>
-      <p class="muted">Full purchases — choose contract length (minimum one year) when you complete the deal.</p>
+      <p class="muted">Full purchases — fees scale with the seller's division. A Premier League regular can cost £5–40m; a National League player rarely tops £20k. Choose contract length (minimum one year) when you complete the deal.</p>
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
@@ -880,7 +906,7 @@ function renderTransfers() {
     </div>
     <div class="panel">
       <h2>Free agents</h2>
-      <p class="muted">No transfer fee — pay wages only. Set contract length on signing.</p>
+      <p class="muted">No transfer fee — pay wages only. The lower the division, the more of the market arrives free (≈75% in the National League, ≈4% in the Premier League). Set contract length on signing.</p>
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
@@ -907,7 +933,7 @@ function renderSponsors() {
   return `
     <div class="panel">
       <h2>Negotiated partnerships</h2>
-      <p class="muted">One lump sum per brand per league season — larger in higher divisions. Same brand cannot be signed twice until the next league campaign.</p>
+      <p class="muted">One lump sum per brand per league season — anchored to your division (anchor offer ≈ £10k in the National League N/S, £600k in the Championship, £3m in the Premier League). Same brand cannot be signed twice until the next league campaign.</p>
       ${
         offers.length
           ? offers
@@ -954,13 +980,14 @@ function renderSponsors() {
             const left = game.classicSponsorSeasonsUntilRenewal(t.id);
             const renewAt = game.state.classicSponsorRenewSeason?.[t.id];
             const term = t.durationSeasons ?? 1;
+            const payment = getSponsorTierPayment(t.id, game.state.leagueIndex);
             const status = active
               ? `<span class="muted">${left} season${left === 1 ? '' : 's'} left · renew from <strong>season ${renewAt ?? '—'}</strong></span>`
               : '<span class="muted">Available</span>';
             return `
             <tr>
               <td>${t.label}</td>
-              <td>${formatMoney(t.signingBonus)}</td>
+              <td>${formatMoney(payment)}</td>
               <td>${term} season${term === 1 ? '' : 's'}</td>
               <td>${status}</td>
               <td><button type="button" data-sponsor="${t.id}" ${active ? 'disabled' : ''}>${active ? 'Locked' : 'Sign'}</button></td>
@@ -1184,7 +1211,7 @@ function wireTab() {
         const role = btn.dataset.hire;
         const sel = $(`[data-hire-role="${role}"]`);
         const q = Number(sel?.value || 3);
-        btn.textContent = `Hire for ${formatMoney(getStaffHireCost(role, q))}`;
+        btn.textContent = `Hire for ${formatMoney(getStaffHireCost(role, q, game.state.leagueIndex))}`;
       });
     };
     syncStaffHireButtons();
@@ -1314,20 +1341,33 @@ $('#onboarding-start')?.addEventListener('click', () => {
     window.alert('Please enter a club name.');
     return;
   }
+  const badgeId = document.querySelector('#ob-badge-grid [aria-pressed="true"]')?.dataset.badge || CLUB_BADGES[0].id;
+  const kitId = document.querySelector('#ob-kit-grid [aria-pressed="true"]')?.dataset.kit || CLUB_KITS[0].id;
+  const badge = getBadge(badgeId);
+  const kit = getKit(kitId);
   game.completeOnboarding({
     clubName: cn,
     stadiumName: $('#ob-stadium')?.value,
-    clubColorPrimary: $('#ob-color-a')?.value,
-    clubColorSecondary: $('#ob-color-b')?.value,
+    clubBadgeId: badge.id,
+    clubKitId: kit.id,
+    clubColorPrimary: badge.primary,
+    clubColorSecondary: kit.primary,
   });
   render();
 });
 
-$('#onboarding-overlay')?.addEventListener('input', (e) => {
-  if (e.target?.matches?.('#ob-color-a, #ob-color-b')) updateOnboardingKitPreview();
-});
-$('#onboarding-overlay')?.addEventListener('change', (e) => {
-  if (e.target?.matches?.('input[name="ob-badge"]')) updateOnboardingKitPreview();
+$('#onboarding-overlay')?.addEventListener('click', (e) => {
+  const badgeBtn = e.target.closest?.('#ob-badge-grid [data-badge]');
+  if (badgeBtn) {
+    setActiveGallery($('#ob-badge-grid'), 'badge', badgeBtn.dataset.badge);
+    updateOnboardingKitPreview();
+    return;
+  }
+  const kitBtn = e.target.closest?.('#ob-kit-grid [data-kit]');
+  if (kitBtn) {
+    setActiveGallery($('#ob-kit-grid'), 'kit', kitBtn.dataset.kit);
+    updateOnboardingKitPreview();
+  }
 });
 
 $('#btn-help')?.addEventListener('click', () => {

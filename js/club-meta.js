@@ -3,7 +3,7 @@
  * Kept compact — decision → consequence loop.
  */
 
-import { ENGLISH_PYRAMID, mulberry32, randomPlayerName } from './leagues.js';
+import { ENGLISH_PYRAMID, mulberry32, randomPlayerName, getLeagueEconomy } from './leagues.js';
 
 export const PLAYER_PERSONALITIES = ['loyal', 'mercenary', 'injury_prone', 'big_game'];
 export const MANAGER_TRAITS = ['develops_youth', 'defensive', 'short_term_results'];
@@ -95,28 +95,19 @@ export function buildSponsorOffers(s) {
   const rep = s.reputation || 10;
   const li = Math.min(Math.max(0, s.leagueIndex ?? 5), ENGLISH_PYRAMID.length - 1);
   const tier = ENGLISH_PYRAMID[li];
-  const anchor = tier.tvBonusPerWeek;
-  /** 1 = top division, ~0.14 = regional tier — scales deal size down the pyramid */
-  const divBoost = (ENGLISH_PYRAMID.length - li) / ENGLISH_PYRAMID.length;
-
-  let core;
-  if (anchor >= 40_000) {
-    core =
-      18_000 +
-      rep * (700 + divBoost * 420) +
-      anchor * (0.22 + divBoost * 0.38 + rng() * (0.04 + divBoost * 0.06));
-  } else {
-    core =
-      10_500 +
-      rep * (320 + li * 45) +
-      anchor * (2.4 + divBoost * 5.5) +
-      rng() * (1800 + (6 - li) * 2200);
-  }
+  const econ = getLeagueEconomy(li);
+  /**
+   * Sponsorship is anchored on the league economy's `sponsorAnchor` (the "national" tier).
+   * A safe bidder pays ~0.5x the anchor, risky pays ~1.2x. Reputation gives a small uplift
+   * within division (max ~25%) so a well-run NL North outfit lands the top end of its band.
+   */
+  const repBoost = 1 + Math.max(0, Math.min(0.25, ((rep - 10) / 90) * 0.5));
+  const core = econ.sponsorAnchor * repBoost;
 
   const safe = {
     id: `offer-safe-${s.week}-${s.season}`,
     brand: 'Stable Stays PLC',
-    oneOffPayment: Math.round(core * (0.82 + rng() * 0.16)),
+    oneOffPayment: Math.round(core * (0.42 + rng() * 0.18)),
     leagueName: tier.name,
     prefMaxPlace: 10,
     minRep: 5,
@@ -128,7 +119,7 @@ export function buildSponsorOffers(s) {
   const risky = {
     id: `offer-risk-${s.week}-${s.season}`,
     brand: 'Velocity Bet',
-    oneOffPayment: Math.round(core * (1.18 + rng() * 0.24)),
+    oneOffPayment: Math.round(core * (1.05 + rng() * 0.35)),
     leagueName: tier.name,
     prefMaxPlace: 6,
     minRep: 12,
@@ -236,6 +227,7 @@ export function computeAnalyticsInsights(s) {
 
 export function runYouthIntake(rng, leagueIndex, invest) {
   const tier = Math.max(0, 6 - (leagueIndex ?? 5));
+  const econ = getLeagueEconomy(leagueIndex);
   const n = invest >= 350_000 ? 3 + (rng() < 0.4 ? 1 : 0) : invest >= 150_000 ? 2 : invest >= 50_000 ? 1 : 0;
   const golden = invest >= 400_000 && rng() < 0.12;
   const out = [];
@@ -251,7 +243,7 @@ export function runYouthIntake(rng, leagueIndex, invest) {
       pos,
       ovr: Math.min(78, ovr),
       age,
-      wage: 400 + Math.floor(rng() * 600),
+      wage: Math.round(econ.baseWeeklyWage * (0.6 + rng() * 0.4)),
       askingFee: 0,
       morale: 78 + Math.floor(rng() * 15),
       personality: rollPlayerPersonality(rng),

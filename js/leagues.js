@@ -2,21 +2,72 @@
  * English football pyramid — real competition tier names.
  * Club names are fictional procedurally to avoid implying official affiliation.
  */
+/**
+ * Per-league economy block — single source of truth for wages, fees, sponsorship and starting cash.
+ * Anchored on real-world ranges (weekly £, one-off £). avgWeeklyWage is the squad mean target;
+ * topWeeklyWage caps OVR ~85+ stars; baseWeeklyWage is the OVR ~50 floor. feeMultiplier turns a
+ * weekly wage into a typical transfer fee. sponsorAnchor is the one-off £ for the "national" tier.
+ */
+const LEAGUE_ECONOMIES = {
+  pl: {
+    avgWeeklyWage: 70_000, topWeeklyWage: 250_000, baseWeeklyWage: 8_000,
+    feeMultiplier: 120, freeTransferRate: 0.04,
+    sponsorAnchor: 3_000_000, staffMultiplier: 10,
+    tvBonusPerWeek: 2_400_000, startingCash: 80_000_000,
+  },
+  ch: {
+    avgWeeklyWage: 12_000, topWeeklyWage: 45_000, baseWeeklyWage: 1_800,
+    feeMultiplier: 70, freeTransferRate: 0.18,
+    sponsorAnchor: 600_000, staffMultiplier: 3,
+    tvBonusPerWeek: 200_000, startingCash: 8_000_000,
+  },
+  l1: {
+    avgWeeklyWage: 2_800, topWeeklyWage: 7_500, baseWeeklyWage: 700,
+    feeMultiplier: 25, freeTransferRate: 0.35,
+    sponsorAnchor: 120_000, staffMultiplier: 1.4,
+    tvBonusPerWeek: 18_000, startingCash: 1_200_000,
+  },
+  l2: {
+    avgWeeklyWage: 1_200, topWeeklyWage: 3_200, baseWeeklyWage: 350,
+    feeMultiplier: 10, freeTransferRate: 0.5,
+    sponsorAnchor: 45_000, staffMultiplier: 0.9,
+    tvBonusPerWeek: 6_000, startingCash: 500_000,
+  },
+  nl: {
+    avgWeeklyWage: 600, topWeeklyWage: 1_500, baseWeeklyWage: 200,
+    feeMultiplier: 5, freeTransferRate: 0.75,
+    sponsorAnchor: 20_000, staffMultiplier: 0.6,
+    tvBonusPerWeek: 1_400, startingCash: 200_000,
+  },
+  nln: {
+    avgWeeklyWage: 350, topWeeklyWage: 800, baseWeeklyWage: 150,
+    feeMultiplier: 3, freeTransferRate: 0.95,
+    sponsorAnchor: 10_000, staffMultiplier: 0.45,
+    tvBonusPerWeek: 260, startingCash: 120_000,
+  },
+};
+
 /** Realistic team counts: PL 20; EFL & National divisions 24 each */
 export const ENGLISH_PYRAMID = [
-  { id: 0, name: 'Premier League', level: 1, teamsInLeague: 20, tvBonusPerWeek: 380_000, avgGate: 35_000 },
-  { id: 1, name: 'EFL Championship', level: 2, teamsInLeague: 24, tvBonusPerWeek: 58_000, avgGate: 18_000 },
-  { id: 2, name: 'EFL League One', level: 3, teamsInLeague: 24, tvBonusPerWeek: 18_000, avgGate: 9_000 },
-  { id: 3, name: 'EFL League Two', level: 4, teamsInLeague: 24, tvBonusPerWeek: 6_500, avgGate: 4_500 },
-  { id: 4, name: 'National League', level: 5, teamsInLeague: 24, tvBonusPerWeek: 1_400, avgGate: 2_200 },
-  { id: 5, name: 'National League North', level: 6, teamsInLeague: 24, tvBonusPerWeek: 260, avgGate: 900 },
-  { id: 6, name: 'National League South', level: 7, teamsInLeague: 24, tvBonusPerWeek: 260, avgGate: 900 },
+  { id: 0, name: 'Premier League', level: 1, teamsInLeague: 20, avgGate: 35_000, economy: LEAGUE_ECONOMIES.pl, tvBonusPerWeek: LEAGUE_ECONOMIES.pl.tvBonusPerWeek },
+  { id: 1, name: 'EFL Championship', level: 2, teamsInLeague: 24, avgGate: 18_000, economy: LEAGUE_ECONOMIES.ch, tvBonusPerWeek: LEAGUE_ECONOMIES.ch.tvBonusPerWeek },
+  { id: 2, name: 'EFL League One', level: 3, teamsInLeague: 24, avgGate: 9_000, economy: LEAGUE_ECONOMIES.l1, tvBonusPerWeek: LEAGUE_ECONOMIES.l1.tvBonusPerWeek },
+  { id: 3, name: 'EFL League Two', level: 4, teamsInLeague: 24, avgGate: 4_500, economy: LEAGUE_ECONOMIES.l2, tvBonusPerWeek: LEAGUE_ECONOMIES.l2.tvBonusPerWeek },
+  { id: 4, name: 'National League', level: 5, teamsInLeague: 24, avgGate: 2_200, economy: LEAGUE_ECONOMIES.nl, tvBonusPerWeek: LEAGUE_ECONOMIES.nl.tvBonusPerWeek },
+  { id: 5, name: 'National League North', level: 6, teamsInLeague: 24, avgGate: 900, economy: LEAGUE_ECONOMIES.nln, tvBonusPerWeek: LEAGUE_ECONOMIES.nln.tvBonusPerWeek },
+  { id: 6, name: 'National League South', level: 7, teamsInLeague: 24, avgGate: 900, economy: LEAGUE_ECONOMIES.nln, tvBonusPerWeek: LEAGUE_ECONOMIES.nln.tvBonusPerWeek },
 ];
 
+/** Lookup the economy block for a given league index; defaults to the lowest tier. */
+export function getLeagueEconomy(leagueIndex) {
+  const li = Math.max(0, Math.min(ENGLISH_PYRAMID.length - 1, leagueIndex ?? ENGLISH_PYRAMID.length - 1));
+  return ENGLISH_PYRAMID[li].economy;
+}
+
 export const FRANCHISE_REGIONS = [
-  { id: 'usa', label: 'United States (MLS-style)', tierLabel: 'Division I', teamsInLeague: 10, entryFee: 45_000_000, tvBonusPerWeek: 200_000, avgGate: 22_000 },
-  { id: 'jpn', label: 'Japan (J.League-style)', tierLabel: 'J2', teamsInLeague: 10, entryFee: 28_000_000, tvBonusPerWeek: 95_000, avgGate: 8_500 },
-  { id: 'esp2', label: 'Spain (Segunda)', tierLabel: 'Segunda División', teamsInLeague: 10, entryFee: 35_000_000, tvBonusPerWeek: 110_000, avgGate: 12_000 },
+  { id: 'usa', label: 'United States (MLS-style)', tierLabel: 'Division I', teamsInLeague: 10, entryFee: 45_000_000, tvBonusPerWeek: 200_000, avgGate: 22_000, economy: LEAGUE_ECONOMIES.ch },
+  { id: 'jpn', label: 'Japan (J.League-style)', tierLabel: 'J2', teamsInLeague: 10, entryFee: 28_000_000, tvBonusPerWeek: 95_000, avgGate: 8_500, economy: LEAGUE_ECONOMIES.l1 },
+  { id: 'esp2', label: 'Spain (Segunda)', tierLabel: 'Segunda División', teamsInLeague: 10, entryFee: 35_000_000, tvBonusPerWeek: 110_000, avgGate: 12_000, economy: LEAGUE_ECONOMIES.ch },
 ];
 
 const PREFIXES = ['Ashford', 'Barton', 'Chedworth', 'Dunston', 'Eastleigh', 'Farnham', 'Grimthorpe', 'Holloway', 'Irwell', 'Kingsbury', 'Loxley', 'Marston', 'Northwick', 'Oakmere', 'Penkridge', 'Quedgeley', 'Ravensmoor', 'Stamford', 'Thornbury', 'Upton', 'Verwood', 'Wetherby', 'Yarnton'];

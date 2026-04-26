@@ -1,59 +1,62 @@
 /**
- * Club crest shapes for the header (kit colours apply here only, not app chrome).
- * Each function returns inner SVG markup (viewBox 0 0 40 40).
+ * Raster gallery of pre-coloured club badges and kits the player picks during onboarding.
+ * Each entry's `primary` and `secondary` are exposed so the rest of the game can still read
+ * club colours as derived data (used in finances/insights copy etc.) — no UI tints from these.
  */
 
-export const CLUB_BADGE_IDS = ['classic', 'shield', 'roundel', 'stripes', 'monogram', 'wings'];
+export const CLUB_BADGES = [
+  { id: 'crowned-lion', label: 'Crowned Lion', src: 'assets/badges/badge-crowned-lion.png', primary: '#0d3b66', secondary: '#f4d35e' },
+  { id: 'crowned-shield', label: 'Crowned Shield', src: 'assets/badges/badge-crowned-shield.png', primary: '#a01029', secondary: '#f4c95d' },
+  { id: 'roundel-star', label: 'Roundel & Star', src: 'assets/badges/badge-roundel-star.png', primary: '#0f5f3f', secondary: '#f7f3e3' },
+  { id: 'anchor-disc', label: 'Anchor Disc', src: 'assets/badges/badge-anchor-disc.png', primary: '#0c5466', secondary: '#eaf2f0' },
+  { id: 'eagle-wings', label: 'Eagle Wings', src: 'assets/badges/badge-eagle-wings.png', primary: '#ff7a1a', secondary: '#1a1a1a' },
+  { id: 'hammers-anvil', label: 'Hammers & Anvil', src: 'assets/badges/badge-hammers-anvil.png', primary: '#2b3743', secondary: '#cfd8de' },
+  { id: 'oak-tree', label: 'Oak Tree', src: 'assets/badges/badge-oak-tree.png', primary: '#1f5c3a', secondary: '#f1e6c6' },
+  { id: 'twin-towers', label: 'Twin Towers', src: 'assets/badges/badge-twin-towers.png', primary: '#3b1f5c', secondary: '#e8e0f5' },
+  { id: 'knight-chess', label: 'Chess Knight', src: 'assets/badges/badge-knight-chess.png', primary: '#1a1a1a', secondary: '#d6a72e' },
+  { id: 'wave-seabird', label: 'Wave & Seabird', src: 'assets/badges/badge-wave-seabird.png', primary: '#0a4d8a', secondary: '#f1e8c8' },
+  { id: 'phoenix', label: 'Phoenix', src: 'assets/badges/badge-phoenix.png', primary: '#c2371a', secondary: '#f4c95d' },
+  { id: 'monogram-rose', label: 'Tudor Rose', src: 'assets/badges/badge-monogram-rose.png', primary: '#a01029', secondary: '#ffffff' },
+];
 
-function escHex(c) {
-  return typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c.trim()) ? c.trim() : '#4ae8a5';
+export const CLUB_KITS = [
+  { id: 'royal-stripes', label: 'Royal Stripes', src: 'assets/kits/kit-royal-stripes.png', primary: '#0d3b66', secondary: '#ffffff' },
+  { id: 'solid-collar', label: 'Crimson Polo', src: 'assets/kits/kit-solid-collar.png', primary: '#a01029', secondary: '#ffffff' },
+  { id: 'hoops', label: 'Emerald Hoops', src: 'assets/kits/kit-hoops.png', primary: '#0f5f3f', secondary: '#ffffff' },
+  { id: 'half-and-half', label: 'Claret & Sky', src: 'assets/kits/kit-half-and-half.png', primary: '#7b1d2e', secondary: '#5fb0d8' },
+  { id: 'central-sash', label: 'Sky Sash', src: 'assets/kits/kit-central-sash.png', primary: '#0a8ad9', secondary: '#ffffff' },
+  { id: 'sleeve-panels', label: 'Black & Tangerine', src: 'assets/kits/kit-sleeve-panels.png', primary: '#1a1a1a', secondary: '#ff7a1a' },
+  { id: 'pinstripes', label: 'Navy Pinstripes', src: 'assets/kits/kit-pinstripes.png', primary: '#0d2240', secondary: '#d6a72e' },
+  { id: 'modern-v', label: 'Modern V-Print', src: 'assets/kits/kit-modern-v.png', primary: '#ffffff', secondary: '#00b3a7' },
+];
+
+export const CLUB_BADGE_IDS = CLUB_BADGES.map((b) => b.id);
+export const CLUB_KIT_IDS = CLUB_KITS.map((k) => k.id);
+
+const DEFAULT_BADGE = CLUB_BADGES[0];
+const DEFAULT_KIT = CLUB_KITS[0];
+
+export function getBadge(id) {
+  return CLUB_BADGES.find((b) => b.id === id) || DEFAULT_BADGE;
 }
 
-const inner = {
-  classic: (p, s) => `
-    <rect x="2" y="2" width="36" height="36" rx="8" fill="#0f1f18" stroke="${s}" stroke-width="2" />
-    <ellipse cx="20" cy="22" rx="12" ry="7" fill="none" stroke="${p}" stroke-width="1.3" opacity="0.9" />
-    <circle cx="20" cy="22" r="2.2" fill="${p}" />
-  `,
-  shield: (p, s) => `
-    <path d="M8 6h24v14c0 8-6 14-12 18-6-4-12-10-12-18V6z" fill="#0f1f18" stroke="${s}" stroke-width="1.8" />
-    <path d="M12 11h16v10c0 5-3.5 9-8 12-4.5-3-8-7-8-12V11z" fill="${p}" opacity="0.85" />
-    <circle cx="20" cy="16" r="3" fill="#0f1f18" stroke="${s}" stroke-width="0.8" />
-  `,
-  roundel: (p, s) => `
-    <circle cx="20" cy="20" r="17" fill="#0f1f18" stroke="${s}" stroke-width="2" />
-    <circle cx="20" cy="20" r="12" fill="none" stroke="${p}" stroke-width="1.5" opacity="0.9" />
-    <circle cx="20" cy="20" r="5" fill="${p}" />
-    <path d="M20 8v4M20 28v4M8 20h4M28 20h4" stroke="${s}" stroke-width="1" opacity="0.6" />
-  `,
-  stripes: (p, s) => `
-    <rect x="4" y="6" width="32" height="28" rx="4" fill="#0f1f18" stroke="${s}" stroke-width="1.5" />
-    <rect x="7" y="9" width="7" height="22" rx="1" fill="${p}" opacity="0.9" />
-    <rect x="16.5" y="9" width="7" height="22" rx="1" fill="${s}" opacity="0.55" />
-    <rect x="26" y="9" width="7" height="22" rx="1" fill="${p}" opacity="0.75" />
-  `,
-  monogram: (p, s) => `
-    <circle cx="20" cy="20" r="17" fill="#0f1f18" stroke="${s}" stroke-width="2" />
-    <text x="20" y="26" text-anchor="middle" font-size="14" font-weight="700" font-family="Outfit,system-ui,sans-serif" fill="${p}">FC</text>
-    <circle cx="20" cy="20" r="14" fill="none" stroke="${p}" stroke-width="0.8" opacity="0.35" />
-  `,
-  wings: (p, s) => `
-    <rect x="2" y="2" width="36" height="36" rx="8" fill="#0f1f18" stroke="${s}" stroke-width="1.5" />
-    <path d="M8 22 Q14 12 20 18 Q26 12 32 22 Q26 26 20 22 Q14 26 8 22" fill="${p}" opacity="0.9" />
-    <ellipse cx="20" cy="22" rx="3" ry="2" fill="#0f1f18" stroke="${s}" stroke-width="0.6" />
-  `,
-};
-
-/**
- * Full SVG element as string — replaces header crest slot.
- */
-export function getClubBadgeSvg(badgeId, primary, secondary) {
-  const p = escHex(primary);
-  const s = escHex(secondary);
-  const fn = inner[badgeId] || inner.classic;
-  return `<svg class="brand-crest" width="44" height="44" viewBox="0 0 40 40" aria-hidden="true" focusable="false">${fn(p, s)}</svg>`;
+export function getKit(id) {
+  return CLUB_KITS.find((k) => k.id === id) || DEFAULT_KIT;
 }
 
 export function isValidBadgeId(id) {
   return typeof id === 'string' && CLUB_BADGE_IDS.includes(id);
+}
+
+export function isValidKitId(id) {
+  return typeof id === 'string' && CLUB_KIT_IDS.includes(id);
+}
+
+/**
+ * Header crest <img> tag — replaces the old SVG generator. Kept named the same so existing
+ * call sites continue to work.
+ */
+export function getClubBadgeSvg(badgeId) {
+  const b = getBadge(badgeId);
+  return `<img class="brand-crest" src="${b.src}" alt="${b.label} club crest" width="44" height="44" />`;
 }

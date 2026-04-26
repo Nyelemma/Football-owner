@@ -1216,6 +1216,9 @@ select {
 
 .brand-crest-slot .brand-crest {
   display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(45, 157, 106, 0.35));
 }
 
@@ -1377,28 +1380,7 @@ body.onboarding-open .brand-block {
   font-size: 0.95rem;
 }
 
-.color-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.color-row label {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.color-row input[type='color'] {
-  width: 3rem;
-  height: 2rem;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.ob-badge-fieldset {
+.ob-gallery-fieldset {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.65rem 0.75rem 0.85rem;
@@ -1413,89 +1395,131 @@ body.onboarding-open .brand-block {
   padding: 0 0.35rem;
 }
 
-.ob-badge-grid {
+.ob-gallery {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
-@media (min-width: 640px) {
-  .ob-badge-grid {
+@media (min-width: 820px) {
+  .ob-gallery {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
-.ob-badge-label {
+.ob-gallery-item {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0.4rem 0.25rem;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-size: 0.65rem;
+  gap: 0.3rem;
+  padding: 0.45rem 0.3rem 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   color: var(--muted);
+  font: inherit;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
   text-align: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
-.ob-badge-label:has(input:checked) {
+.ob-gallery-item:hover,
+.ob-gallery-item:focus-visible {
   border-color: var(--accent-dim);
+  color: var(--text);
+  outline: none;
+}
+
+.ob-gallery-item:focus-visible {
+  box-shadow: 0 0 0 3px rgba(74, 232, 165, 0.35);
+}
+
+.ob-gallery-item[aria-pressed='true'] {
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.ob-badge-label input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
+.ob-gallery-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
 }
 
-.ob-badge-thumb {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.5rem;
+.ob-gallery-badges .ob-gallery-item {
+  aspect-ratio: auto;
 }
 
-.ob-badge-cap {
+.ob-gallery-badges .ob-gallery-item img {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+.ob-gallery-kits .ob-gallery-item img {
+  aspect-ratio: 4 / 5;
+  object-fit: contain;
+}
+
+.ob-gallery-cap {
+  display: block;
   line-height: 1.2;
+  font-size: 0.65rem;
+  word-break: break-word;
 }
 
-.ob-kit-preview {
-  display: flex;
-  align-items: center;
+.ob-selection-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.5rem 0.65rem;
-  border-radius: 8px;
+  padding: 0.6rem;
+  border-radius: 10px;
   border: 1px dashed var(--border);
   background: var(--bg-elevated);
 }
 
-.ob-kit-label {
-  font-size: 0.75rem;
+.ob-preview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ob-preview-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 
-.ob-kit-stripes {
+.ob-preview-image {
+  width: 100%;
   display: flex;
-  flex: 1;
-  min-width: 120px;
-  height: 1.5rem;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--border);
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 0.5rem;
 }
 
-.ob-kit-a,
-.ob-kit-b {
-  flex: 1;
-  min-height: 100%;
+.ob-preview-image img {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  object-fit: contain;
+}
+
+.ob-preview-badge img {
+  aspect-ratio: 1 / 1;
+}
+
+.ob-preview-kit img {
+  aspect-ratio: 4 / 5;
 }
 
 .onboarding-start {
@@ -1599,4 +1623,50 @@ body.onboarding-open .brand-block {
 
 .help-body p:first-child {
   margin-top: 0;
+}
+
+/* —— Game-world art assets —— */
+.onboarding-hero-img {
+  object-fit: cover;
+}
+
+.trophy-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.trophy-icon.trophy-icon-lg {
+  width: 3rem;
+  height: 3rem;
+}
+
+.cup-row-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.season-summary-trophy {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.season-summary-trophy .trophy-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.stadium-illustration {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin: 0 0 0.85rem;
+  border: 1px solid var(--border);
 }

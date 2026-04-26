@@ -8,6 +8,7 @@ import {
   buildDoubleRoundRobinRounds,
   randomPlayerName,
   randomStaffName,
+  getLeagueEconomy,
 } from './leagues.js';
 import { buildFixtureSchedule, buildScheduleSteps, computeScheduleStepIndex } from './calendar-cups.js';
 import {
@@ -37,6 +38,12 @@ const OFF_SEASON_WEEKS = 6;
 /** Training matches & friendlies before the league campaign. */
 const PRE_SEASON_WEEKS = 5;
 
+/**
+ * Base values are the National League North reference (staffMultiplier = 0.45).
+ * The actual per-tier wage/fee is derived by multiplying by `econ.staffMultiplier / 0.45`,
+ * so a Premier League manager (multiplier 10) earns ~22x the NL North baseline.
+ */
+const STAFF_BASE_DIVISOR = 0.45;
 const STAFF_ROLES = [
   { id: 'manager', label: 'First-team manager', baseWeekly: 8_000, qualityCap: 5, hireCost: 25_000 },
   { id: 'dof', label: 'Director of football', baseWeekly: 5_500, qualityCap: 5, hireCost: 18_000 },
@@ -44,26 +51,43 @@ const STAFF_ROLES = [
   { id: 'commercial', label: 'Commercial director', baseWeekly: 2_800, qualityCap: 5, hireCost: 10_000 },
 ];
 
-/** Signing fee scales with quality (1–5): modest at Q1, steep at Q5 */
-export function getStaffHireCost(roleId, quality) {
+function staffEconMult(leagueIndex) {
+  const econ = getLeagueEconomy(leagueIndex);
+  return econ.staffMultiplier / STAFF_BASE_DIVISOR;
+}
+
+/** Signing fee scales with quality (1–5) AND with the player's current division. */
+export function getStaffHireCost(roleId, quality, leagueIndex) {
   const def = STAFF_ROLES.find((r) => r.id === roleId);
   if (!def || quality < 1 || quality > def.qualityCap) return 0;
   const mult = 0.38 + quality * 0.285;
-  return Math.round(def.hireCost * mult);
+  return Math.round(def.hireCost * mult * staffEconMult(leagueIndex));
 }
 
-function staffWeeklyWage(def, quality) {
+function staffWeeklyWage(def, quality, leagueIndex) {
   const mult = 0.48 + quality * 0.235;
-  return Math.round(def.baseWeekly * mult);
+  return Math.round(def.baseWeekly * mult * staffEconMult(leagueIndex));
 }
 
-/** Classic packages: one-off payment only; each tier locks for `durationSeasons` league campaigns before you can renew */
+/**
+ * Classic sponsor packages: one-off payment only; each tier locks for `durationSeasons`
+ * before you can renew. Multipliers are applied to the league economy's `sponsorAnchor`
+ * (national tier = 1.0x), so the same offers feel right at every level of the pyramid.
+ */
 const SPONSOR_TIERS = [
-  { id: 'local', label: 'Local business', signingBonus: 38_000, durationSeasons: 1 },
-  { id: 'regional', label: 'Regional brand', signingBonus: 175_000, durationSeasons: 2 },
-  { id: 'national', label: 'National sponsor', signingBonus: 420_000, durationSeasons: 3 },
-  { id: 'elite', label: 'Elite partner', signingBonus: 1_050_000, durationSeasons: 4 },
+  { id: 'local', label: 'Local business', anchorMul: 0.05, durationSeasons: 1 },
+  { id: 'regional', label: 'Regional brand', anchorMul: 0.20, durationSeasons: 2 },
+  { id: 'national', label: 'National sponsor', anchorMul: 1.0, durationSeasons: 3 },
+  { id: 'elite', label: 'Elite partner', anchorMul: 3.5, durationSeasons: 4 },
 ];
+
+/** Lump-sum payment for a classic sponsor tier at the player's current division. */
+export function getSponsorTierPayment(tierId, leagueIndex) {
+  const t = SPONSOR_TIERS.find((x) => x.id === tierId);
+  if (!t) return 0;
+  const econ = getLeagueEconomy(leagueIndex);
+  return Math.round(econ.sponsorAnchor * t.anchorMul);
+}
 
 function ensurePlayerStats(p) {
   if (p.apps !== undefined && p.lApps === undefined) {
@@ -125,21 +149,46 @@ export function playerCupAvgRating(p) {
   return Math.round((p.cRatingSum / p.cRatingCount) * 10) / 10;
 }
 
-function randomPlayer(rng, tier) {
+/**
+ * Wage curve: anchor on `econ.baseWeeklyWage` (OVR ~50 floor) and stretch up to
+ * `econ.topWeeklyWage` near OVR ~90, with the squad mean landing on `econ.avgWeeklyWage`.
+ */
+export function wageForOvr(ovr, econ, rng = Math.random) {
+  const o = Math.max(40, Math.min(95, ovr));
+  const base = econ.baseWeeklyWage;
+  const top = econ.topWeeklyWage;
+  const t = Math.max(0, Math.min(1, (o - 50) / 40));
+  const curve = base + (top - base) * Math.pow(t, 1.9);
+  const noise = 0.85 + rng() * 0.3;
+  return Math.max(Math.round(econ.baseWeeklyWage * 0.6), Math.round(curve * noise));
+}
+
+/** Real fees: weekly wage × feeMultiplier × age factor. Forced free for low-OVR fringe in lower leagues. */
+export function feeForPlayer(wage, ovr, age, econ, rng = Math.random) {
+  const isFree = rng() < econ.freeTransferRate && ovr < 62;
+  if (isFree) return 0;
+  const ageFactor = Math.max(0.2, Math.min(1.4, 1.4 - (age - 18) * 0.05));
+  const ovrFactor = 0.6 + Math.pow(Math.max(0, ovr - 50) / 40, 1.6) * 1.6;
+  const fee = wage * econ.feeMultiplier * ageFactor * ovrFactor * (0.8 + rng() * 0.5);
+  return Math.max(0, Math.round(fee / 1000) * 1000);
+}
+
+function randomPlayer(rng, tier, econ) {
   const positions = ['GK', 'DF', 'DF', 'MF', 'MF', 'FW'];
   const pos = positions[Math.floor(rng() * positions.length)];
   const base = 45 + tier * 4 + Math.floor(rng() * 18);
   const age = 18 + Math.floor(rng() * 17);
-  const wage = 800 + Math.floor(rng() * 4000) + tier * 600;
-  const fee = Math.floor(wage * (30 + rng() * 50) * (1.2 - age * 0.015));
+  const ovr = Math.min(94, base);
+  const wage = wageForOvr(ovr, econ, rng);
+  const fee = feeForPlayer(wage, ovr, age, econ, rng);
   return ensurePlayerStats({
     id: `p-${Math.floor(rng() * 1e12)}-${Math.floor(rng() * 1e12)}`,
     name: randomPlayerName(rng),
     pos,
-    ovr: Math.min(94, base),
+    ovr,
     age,
     wage,
-    askingFee: Math.max(0, fee),
+    askingFee: fee,
     morale: 70 + Math.floor(rng() * 25),
     personality: rollPlayerPersonality(rng),
     lApps: 0,
@@ -163,6 +212,7 @@ function randomPlayer(rng, tier) {
 /** AI squads for league teams (player club uses state.squad only). */
 export function attachSquadsToTable(table, leagueIndex, seedSalt) {
   const tier = Math.max(0, 6 - leagueIndex);
+  const econ = getLeagueEconomy(leagueIndex);
   return table.map((team, i) => {
     if (team.isPlayer) {
       const { squad: _drop, ...rest } = team;
@@ -173,11 +223,11 @@ export function attachSquadsToTable(table, leagueIndex, seedSalt) {
     const str = team.squadStrength ?? 55;
     const squad = [];
     for (let j = 0; j < 18; j++) {
-      const p = randomPlayer(rng, tier + (j < 9 ? 1 : 0));
+      const p = randomPlayer(rng, tier + (j < 9 ? 1 : 0), econ);
       const adjust = (str - 55) * 0.38;
       p.ovr = Math.min(94, Math.max(36, Math.round(p.ovr + adjust + rng() * 7 - 3.5)));
-      p.wage = Math.max(350, Math.round(350 + p.ovr * (38 + tier * 14) + rng() * 1200));
-      p.askingFee = Math.floor(p.wage * (22 + rng() * 40));
+      p.wage = wageForOvr(p.ovr, econ, rng);
+      p.askingFee = feeForPlayer(p.wage, p.ovr, p.age, econ, rng);
       squad.push(p);
     }
     return { ...team, squad };
@@ -535,14 +585,15 @@ function initCupSeason(leagueIndex) {
 
 function buildTransferMarkets(state, scoutBonus) {
   const tier = Math.max(0, 6 - state.leagueIndex);
+  const econ = getLeagueEconomy(state.leagueIndex);
   const rngP = mulberry32(state.seed + state.season * 5000 + 11);
   const nPerm = 14 + scoutBonus;
-  state.transferList = Array.from({ length: nPerm }, () => randomPlayer(rngP, tier + Math.floor(scoutBonus / 3)));
+  state.transferList = Array.from({ length: nPerm }, () => randomPlayer(rngP, tier + Math.floor(scoutBonus / 3), econ));
 
   const rngF = mulberry32(state.seed + state.season * 6000 + 22);
   const nFree = 7 + Math.floor(scoutBonus / 2);
   state.freeAgentList = Array.from({ length: nFree }, () => {
-    const p = randomPlayer(rngF, Math.max(0, tier - 1));
+    const p = randomPlayer(rngF, Math.max(0, tier - 1), econ);
     p.askingFee = 0;
     p.listingType = 'free';
     return p;
@@ -550,9 +601,11 @@ function buildTransferMarkets(state, scoutBonus) {
 
   const rngL = mulberry32(state.seed + state.season * 7000 + 33);
   state.loanList = Array.from({ length: 6 }, () => {
-    const p = randomPlayer(rngL, tier + 1 + Math.floor(rngL() * 2));
+    const p = randomPlayer(rngL, tier + 1 + Math.floor(rngL() * 2), econ);
+    /** Loan fee ≈ 6–10% of season-long wage outlay; capped to division economy. */
     const notional = Math.floor(p.wage * (40 + rngL() * 55));
-    p.askingFee = Math.max(3_000, Math.floor(notional * 0.06 + rngL() * 22_000));
+    const minLoan = Math.max(500, Math.round(econ.baseWeeklyWage * 4));
+    p.askingFee = Math.max(minLoan, Math.floor(notional * 0.06 + rngL() * (econ.baseWeeklyWage * 60)));
     p.listingType = 'loan';
     return p;
   });
@@ -574,6 +627,7 @@ function defaultState() {
   const seed = Date.now() % 1_000_000_000;
   const rng = mulberry32(seed);
   const startLeague = 5;
+  const startEcon = getLeagueEconomy(startLeague);
   const clubName = 'Marston Athletic';
   let table = makeLeagueTeams(startLeague, clubName, seed);
   table = attachSquadsToTable(table, startLeague, seed);
@@ -582,7 +636,7 @@ function defaultState() {
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 9,
+    version: 10,
     seed,
     week: 1,
     season: 1,
@@ -590,11 +644,12 @@ function defaultState() {
     leagueIndex: startLeague,
     clubName,
     stadiumName: 'Marston Park',
-    clubColorPrimary: '#4ae8a5',
-    clubColorSecondary: '#2d9d6a',
-    clubBadgeId: 'classic',
+    clubColorPrimary: '#0d3b66',
+    clubColorSecondary: '#f4d35e',
+    clubBadgeId: 'crowned-lion',
+    clubKitId: 'royal-stripes',
     onboardingComplete: false,
-    cash: 420_000,
+    cash: startEcon.startingCash,
     debt: 0,
     stadiumCapacity: 2_800,
     ticketPrice: 18,
@@ -629,7 +684,7 @@ function defaultState() {
     advisories: [],
     advisoryId: 0,
     history: [],
-    squad: Array.from({ length: 18 }, () => randomPlayer(rng, 0)),
+    squad: Array.from({ length: 18 }, () => randomPlayer(rng, 0, startEcon)),
     staff: {
       manager: { hired: false, name: '', quality: 0, wage: 0 },
       dof: { hired: false, name: '', quality: 0, wage: 0 },
@@ -836,6 +891,82 @@ function migrateToV8(s) {
 function migrateToV9(s) {
   if (!CLUB_BADGE_IDS.includes(s.clubBadgeId)) s.clubBadgeId = 'classic';
   s.version = 9;
+}
+
+/**
+ * v10: wages, fees and sponsorship are anchored on the per-league economy table, and
+ * onboarding now selects from raster badge + kit galleries instead of colour pickers.
+ * Recompute every existing wage/fee against the player's current division so old saves
+ * don't lose money but stop showing outdated values.
+ */
+function migrateToV10(s) {
+  if ((s.version || 0) >= 10) return;
+  const econ = getLeagueEconomy(s.leagueIndex ?? 5);
+  const rng = mulberry32((s.seed || 1) + 10_777);
+
+  for (const p of s.squad || []) {
+    if (typeof p.ovr === 'number') {
+      p.wage = wageForOvr(p.ovr, econ, rng);
+      p.askingFee = feeForPlayer(p.wage, p.ovr, p.age ?? 24, econ, rng);
+    }
+  }
+
+  if (Array.isArray(s.transferList)) {
+    for (const p of s.transferList) {
+      if (typeof p.ovr === 'number') {
+        p.wage = wageForOvr(p.ovr, econ, rng);
+        p.askingFee = feeForPlayer(p.wage, p.ovr, p.age ?? 24, econ, rng);
+      }
+    }
+  }
+  if (Array.isArray(s.freeAgentList)) {
+    for (const p of s.freeAgentList) {
+      if (typeof p.ovr === 'number') {
+        p.wage = wageForOvr(p.ovr, econ, rng);
+        p.askingFee = 0;
+      }
+    }
+  }
+  if (Array.isArray(s.loanList)) {
+    for (const p of s.loanList) {
+      if (typeof p.ovr === 'number') {
+        p.wage = wageForOvr(p.ovr, econ, rng);
+        const notional = Math.floor(p.wage * 50);
+        p.askingFee = Math.max(500, Math.floor(notional * 0.06));
+      }
+    }
+  }
+
+  for (const t of s.table || []) {
+    for (const p of t.squad || []) {
+      if (typeof p.ovr === 'number') {
+        p.wage = wageForOvr(p.ovr, econ, rng);
+        p.askingFee = feeForPlayer(p.wage, p.ovr, p.age ?? 24, econ, rng);
+      }
+    }
+  }
+
+  if (s.staff) {
+    for (const role of STAFF_ROLES) {
+      const cur = s.staff[role.id];
+      if (cur?.hired) {
+        cur.wage = staffWeeklyWage(role, cur.quality || 1, s.leagueIndex);
+      }
+    }
+  }
+
+  /** Map legacy procedural badge ids onto the new gallery ids */
+  const legacyBadgeMap = {
+    classic: 'crowned-lion',
+    shield: 'crowned-shield',
+    roundel: 'roundel-star',
+    stripes: 'royal-stripes-badge',
+    monogram: 'monogram-rose',
+    wings: 'eagle-wings',
+  };
+  if (legacyBadgeMap[s.clubBadgeId]) s.clubBadgeId = legacyBadgeMap[s.clubBadgeId];
+  if (!s.clubKitId) s.clubKitId = 'royal-stripes';
+  s.version = 10;
 }
 
 export class Game {
@@ -1687,10 +1818,11 @@ export class Game {
     const def = STAFF_ROLES.find((r) => r.id === roleId);
     if (!def) return false;
     if (quality < 1 || quality > def.qualityCap) return false;
-    const hireCost = getStaffHireCost(roleId, quality);
+    const li = this.state.leagueIndex;
+    const hireCost = getStaffHireCost(roleId, quality, li);
     if (this.state.cash < hireCost) return false;
     this.state.cash -= hireCost;
-    const wage = staffWeeklyWage(def, quality);
+    const wage = staffWeeklyWage(def, quality, li);
     const nameRng = mulberry32(
       this.state.seed +
         roleId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) +
@@ -1902,7 +2034,7 @@ export class Game {
     return true;
   }
 
-  setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId } = {}) {
+  setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId, clubKitId } = {}) {
     const s = this.state;
     const trim = (x, max) => String(x ?? '').trim().slice(0, max);
     const hexOk = (c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c.trim());
@@ -1915,13 +2047,14 @@ export class Game {
     if (clubColorPrimary != null && hexOk(clubColorPrimary)) s.clubColorPrimary = clubColorPrimary.trim();
     if (clubColorSecondary != null && hexOk(clubColorSecondary)) s.clubColorSecondary = clubColorSecondary.trim();
     if (clubBadgeId != null && CLUB_BADGE_IDS.includes(clubBadgeId)) s.clubBadgeId = clubBadgeId;
+    if (clubKitId != null && typeof clubKitId === 'string') s.clubKitId = clubKitId;
     this._emit();
     this.save();
     return true;
   }
 
-  completeOnboarding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId }) {
-    this.setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId });
+  completeOnboarding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId, clubKitId }) {
+    this.setClubBranding({ clubName, stadiumName, clubColorPrimary, clubColorSecondary, clubBadgeId, clubKitId });
     this.state.onboardingComplete = true;
     this.state.history.unshift({
       week: this.state.week,
@@ -2292,15 +2425,16 @@ export class Game {
     if (this.hasActiveSponsorTier(tierId)) return false;
     const s = this.state;
     const dur = Math.max(1, t.durationSeasons ?? 1);
-    s.cash += t.signingBonus;
+    const payment = getSponsorTierPayment(tierId, s.leagueIndex);
+    s.cash += payment;
     s.seasonFinance = s.seasonFinance || {};
-    s.seasonFinance.sponsorLumps = (s.seasonFinance.sponsorLumps || 0) + t.signingBonus;
+    s.seasonFinance.sponsorLumps = (s.seasonFinance.sponsorLumps || 0) + payment;
     s.classicSponsorRenewSeason = s.classicSponsorRenewSeason || {};
     s.classicSponsorRenewSeason[tierId] = s.season + dur;
     s.history.unshift({
       week: s.week,
       type: 'sponsor',
-      text: `${t.label}: +£${t.signingBonus.toLocaleString()} one-off — deal runs ${dur} season${dur === 1 ? '' : 's'} (renew from season ${s.season + dur}).`,
+      text: `${t.label}: +£${payment.toLocaleString()} one-off — deal runs ${dur} season${dur === 1 ? '' : 's'} (renew from season ${s.season + dur}).`,
     });
     this._emit();
     this.save();
@@ -2330,15 +2464,18 @@ export class Game {
     this.state.seed = seed;
     this.state.clubName = newName;
     this.state.stadiumName = `${newName.split(/\s+/)[0] || 'Municipal'} Park`;
-    this.state.clubBadgeId = 'classic';
-    this.state.clubColorPrimary = '#4ae8a5';
-    this.state.clubColorSecondary = '#2d9d6a';
+    this.state.clubBadgeId = 'crowned-lion';
+    this.state.clubKitId = 'royal-stripes';
+    this.state.clubColorPrimary = '#0d3b66';
+    this.state.clubColorSecondary = '#f4d35e';
     this.state.leagueIndex = Math.min(ENGLISH_PYRAMID.length - 1, this.state.leagueIndex + 2);
+    const newEcon = getLeagueEconomy(this.state.leagueIndex);
+    this.state.cash = newEcon.startingCash;
     let nt = makeLeagueTeams(this.state.leagueIndex, newName, seed);
     this.state.table = attachSquadsToTable(nt, this.state.leagueIndex, seed);
     this.state.worldSeason = -1;
     const rngNew = mulberry32(seed);
-    this.state.squad = Array.from({ length: 16 }, () => randomPlayer(rngNew, 0));
+    this.state.squad = Array.from({ length: 16 }, () => randomPlayer(rngNew, 0, newEcon));
     this.state.squad.forEach((pl) => {
       ensurePlayerStats(pl);
       pl.contractYearsSigned = 2;
@@ -2436,11 +2573,18 @@ export class Game {
     if (!pool.length) return;
     const p = pool[Math.floor(rng() * pool.length)];
     if (s.playerBuyOffers.some((o) => o.playerId === p.id)) return;
-    const fee = Math.round(
-      (p.wage * 40 + p.ovr * 17_000 + (p.lGoals || 0) * 12_000) * (0.82 + rng() * 0.32)
-    );
+    /**
+     * Bidder usually shops one tier up, so they value the player at the buyer's economy
+     * (a star at NL North will fetch a League Two-sized bid). Mix wage × feeMultiplier
+     * with ovr/goals modifiers to keep stars commanding a premium.
+     */
+    const buyerLi = Math.max(0, (s.leagueIndex ?? 5) - 1);
+    const buyerEcon = getLeagueEconomy(buyerLi);
+    const baseFee = feeForPlayer(p.wage, p.ovr, p.age, buyerEcon, rng);
+    const formBoost = ((p.ovr - 50) * buyerEcon.feeMultiplier * 80 + (p.lGoals || 0) * buyerEcon.feeMultiplier * 60) * (0.82 + rng() * 0.32);
+    const fee = Math.round(baseFee + Math.max(0, formBoost));
     const fromClub = randomClubName(rng);
-    const feeClamped = Math.max(50_000, fee);
+    const feeClamped = Math.max(Math.round(buyerEcon.baseWeeklyWage * buyerEcon.feeMultiplier * 0.5), fee);
     s.playerBuyOffers.push({
       id: `bid-${s.week}-${p.id}`,
       playerId: p.id,
@@ -2483,6 +2627,7 @@ export class Game {
         migrateToV7(this.state);
         migrateToV8(this.state);
         migrateToV9(this.state);
+        migrateToV10(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);
