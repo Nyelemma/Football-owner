@@ -4,9 +4,54 @@
  */
 
 import { ENGLISH_PYRAMID, mulberry32, randomPlayerName, getLeagueEconomy } from './leagues.js';
+import { rollDetailedPosition } from './positions.js';
 
-export const PLAYER_PERSONALITIES = ['loyal', 'mercenary', 'injury_prone', 'big_game'];
+export const PLAYER_PERSONALITIES = ['loyal', 'mercenary', 'leader', 'injury_prone', 'big_game'];
 export const MANAGER_TRAITS = ['develops_youth', 'defensive', 'short_term_results'];
+
+const TRAIT_DEFS = [
+  { id: 'loyal', weight: 3 },
+  { id: 'mercenary', weight: 1 },
+  { id: 'leader', weight: 2 },
+  { id: 'injury_prone', weight: 1 },
+  { id: 'big_game', weight: 2 },
+];
+
+function traitWeightMapForPosition(pos) {
+  const m = Object.fromEntries(TRAIT_DEFS.map((t) => [t.id, t.weight]));
+  const p = pos || '';
+  if (p === 'CB' || p === 'LB' || p === 'RB') {
+    m.leader += 3;
+    m.loyal += 2;
+    m.mercenary *= 0.45;
+  } else if (p === 'ST' || p === 'RW' || p === 'LW') {
+    m.big_game += 2.5;
+    m.mercenary += 1.2;
+    m.loyal += 0.6;
+  } else if (p === 'CDM' || p === 'CM' || p === 'CAM') {
+    m.leader += 1.8;
+    m.big_game += 0.9;
+    m.loyal += 0.8;
+    m.mercenary += 0.35;
+  } else if (p === 'GK') {
+    m.leader += 1.4;
+    m.loyal += 1;
+    m.mercenary *= 0.55;
+    m.injury_prone *= 0.85;
+  } else if (p === 'DF') {
+    m.leader += 2;
+    m.loyal += 1.2;
+    m.mercenary *= 0.5;
+  } else if (p === 'MF') {
+    m.leader += 1.2;
+    m.big_game += 0.5;
+    m.mercenary += 0.3;
+  } else if (p === 'FW') {
+    m.big_game += 1.8;
+    m.mercenary += 0.8;
+  }
+  return m;
+}
 
 export const CLUB_IDENTITIES = [
   { id: 'youth', label: 'Youth-first', desc: 'Fans want U21 minutes; big fees for veterans test patience.' },
@@ -14,8 +59,10 @@ export const CLUB_IDENTITIES = [
   { id: 'underdog', label: 'Underdog spirit', desc: 'Supporters love punching up; heavy favourites disappoint easily.' },
 ];
 
-export function rollPlayerPersonality(rng) {
-  return PLAYER_PERSONALITIES[Math.floor(rng() * PLAYER_PERSONALITIES.length)];
+export function rollPlayerPersonality(rng, position) {
+  const map = traitWeightMapForPosition(position);
+  const pool = TRAIT_DEFS.flatMap((t) => Array(Math.max(1, Math.round((map[t.id] ?? t.weight) * 4))).fill(t.id));
+  return pool[Math.floor(rng() * pool.length)];
 }
 
 export function rollManagerTraits(rng) {
@@ -49,7 +96,7 @@ export function migrateToV4(s) {
   }
   const rng = mulberry32(s.seed + 909);
   for (const p of s.squad || []) {
-    if (!p.personality) p.personality = rollPlayerPersonality(rng);
+    if (!p.personality) p.personality = rollPlayerPersonality(rng, p.pos);
   }
   s.version = 4;
 }
@@ -86,6 +133,8 @@ export function computePlayerMatchBoost(s) {
   }
   const bg = (s.squad || []).filter((p) => p.personality === 'big_game').length;
   boost += Math.min(2, bg * 0.35);
+  const leaders = (s.squad || []).filter((p) => p.personality === 'leader').length;
+  boost += Math.min(1.65, leaders * 0.38);
   if (s.clubIdentity === 'underdog') boost += 0.4;
   return boost;
 }
@@ -236,7 +285,7 @@ export function runYouthIntake(rng, leagueIndex, invest) {
     const ovr = golden
       ? 58 + Math.floor(rng() * 12)
       : 48 + tier * 2 + Math.floor(rng() * 10) + Math.floor(invest / 200_000);
-    const pos = ['GK', 'DF', 'MF', 'FW'][Math.floor(rng() * 4)];
+    const pos = rollDetailedPosition(rng);
     out.push({
       id: `youth-${Math.floor(rng() * 1e12)}-${i}-${Math.floor(rng() * 1e9)}`,
       name: randomPlayerName(rng),
@@ -246,7 +295,7 @@ export function runYouthIntake(rng, leagueIndex, invest) {
       wage: Math.round(econ.baseWeeklyWage * (0.6 + rng() * 0.4)),
       askingFee: 0,
       morale: 78 + Math.floor(rng() * 15),
-      personality: rollPlayerPersonality(rng),
+      personality: rollPlayerPersonality(rng, pos),
       lApps: 0,
       cApps: 0,
       fApps: 0,

@@ -11,6 +11,7 @@ import {
   PRE_SEASON_WEEKS,
 } from './game.js';
 import { ENGLISH_PYRAMID, FRANCHISE_REGIONS } from './leagues.js';
+import { TRANSFER_FILTER_POSITIONS } from './positions.js';
 import { getClubBadgeSvg, CLUB_BADGES, CLUB_KITS, getBadge, getKit } from './club-badges.js';
 
 const game = new Game();
@@ -154,6 +155,20 @@ function syncHelpOverlay() {
 let pyramidView = { league: null, teamId: '' };
 let pyramidFlash = { text: '', ok: false };
 
+let transferPosFilter = 'ALL';
+
+function formatTrait(personalityKey) {
+  if (!personalityKey) return '—';
+  const map = {
+    loyal: 'Loyal',
+    mercenary: 'Mercenary',
+    leader: 'Leader',
+    injury_prone: 'Injury prone',
+    big_game: 'Big game player',
+  };
+  return map[personalityKey] || personalityKey;
+}
+
 function inboxItemCount(s) {
   return (s.pendingEvents?.length || 0) + (s.advisories?.length || 0);
 }
@@ -252,7 +267,7 @@ function renderMailboxHTML() {
           scoutNegHtml = `
         <div class="mail-scout-neg">
           <h4 class="subhead">Negotiation (list terms)</h4>
-          <p><strong>${p.name}</strong> · ${p.pos} · OVR ${p.ovr} · ${formatMoney(p.askingFee || 0)} · ${formatMoney(p.wage)}/wk</p>
+          <p><strong>${p.name}</strong> · ${p.pos} · age ${p.age ?? '—'} · OVR ${p.ovr} · ${formatMoney(p.askingFee || 0)} · ${formatMoney(p.wage)}/wk</p>
           <div class="row-actions" style="flex-wrap:wrap;align-items:center;gap:0.5rem;margin-top:0.5rem">
             <label>Contract <select data-scout-adv-contract="${sel.id}">${opts}</select></label>
             <button type="button" class="primary" data-scout-sign-advisory="${sel.id}">Confirm signing</button>
@@ -293,16 +308,24 @@ function renderMatchdayHTML() {
   const r = game.state.lastMatchReport;
   if (!r) return '';
   const youName = r.playerIsHome ? r.homeName : r.awayName;
+  const ageCell = (a) => (a != null ? a : '—');
   const lineRows = (rows) =>
     (rows || [])
-      .map((p) => `<tr><td>${p.name}</td><td>${p.pos}</td><td>${p.ovr}</td></tr>`)
-      .join('') || '<tr><td colspan="3" class="muted">—</td></tr>';
+      .map((p) => `<tr><td>${p.name}</td><td>${p.pos}</td><td>${p.ovr}</td><td>${ageCell(p.age)}</td></tr>`)
+      .join('') || '<tr><td colspan="4" class="muted">—</td></tr>';
 
   const feedLines = (r.feed || [])
     .map((f) => `<li class="feed-line feed-${f.phase || 'live'}"><span class="feed-min">${f.minute}'</span><span class="feed-txt">${f.text}</span></li>`)
     .join('');
 
   const goalsOnly = (r.feed || []).filter((x) => String(x.text).includes('GOAL'));
+
+  const attLine =
+    r.kind === 'league' &&
+    typeof r.attendance === 'number' &&
+    typeof r.stadiumCapacity === 'number'
+      ? `<p class="match-attendance muted">Attendance: <strong>${r.attendance.toLocaleString()}</strong> / ${r.stadiumCapacity.toLocaleString()}${r.playerIsHome ? ' (your ground)' : ' (away venue)'}</p>${r.stadiumHint ? `<p class="stadium-hint muted">${r.stadiumHint}</p>` : ''}`
+      : '';
 
   let body = '';
   if (matchdayTab === 'teams') {
@@ -311,14 +334,14 @@ function renderMatchdayHTML() {
         <div class="lineup-col">
           <h4>${r.homeName}</h4>
           <p class="muted tiny">Starting XI</p>
-          <table class="lineup-tbl"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th></tr></thead><tbody>${lineRows(r.homeLineup)}</tbody></table>
+          <table class="lineup-tbl"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Age</th></tr></thead><tbody>${lineRows(r.homeLineup)}</tbody></table>
           <p class="muted tiny">Subs</p>
           <table class="lineup-tbl sub"><tbody>${lineRows(r.homeBench)}</tbody></table>
         </div>
         <div class="lineup-col">
           <h4>${r.awayName}</h4>
           <p class="muted tiny">Starting XI</p>
-          <table class="lineup-tbl"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th></tr></thead><tbody>${lineRows(r.awayLineup)}</tbody></table>
+          <table class="lineup-tbl"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Age</th></tr></thead><tbody>${lineRows(r.awayLineup)}</tbody></table>
           <p class="muted tiny">Subs</p>
           <table class="lineup-tbl sub"><tbody>${lineRows(r.awayBench)}</tbody></table>
         </div>
@@ -329,6 +352,7 @@ function renderMatchdayHTML() {
     body = `
       <div class="summary-block">
         <p class="summary-score">${r.homeName} <strong>${r.homeGoals}</strong> – <strong>${r.awayGoals}</strong> ${r.awayName}</p>
+        ${attLine}
         <h4>Goals</h4>
         <ul class="goal-summary">${goalsOnly.map((g) => `<li>${g.text}</li>`).join('') || '<li class="muted">No goals</li>'}</ul>
       </div>`;
@@ -351,6 +375,7 @@ function renderMatchdayHTML() {
         <span class="score-sep">–</span>
         <div class="score-block"><span class="score-name">${r.awayName}</span><span class="score-num">${r.awayGoals}</span></div>
       </div>
+      ${matchdayTab !== 'summary' ? attLine : ''}
       <p class="muted matchday-you">Your club: <strong>${youName}</strong></p>
       <div class="matchday-tabs">
         <button type="button" data-mdtab="teams" class="${matchdayTab === 'teams' ? 'active' : ''}">Before</button>
@@ -477,7 +502,8 @@ function renderHeader() {
   els.rep.textContent = s.reputation;
   if (els.stadiumLine) {
     const sn = s.stadiumName || 'Stadium';
-    els.stadiumLine.textContent = `${sn} · ${s.stadiumCapacity.toLocaleString()} seats`;
+    const fb = s.fanBase != null ? ` · fan base ~${Math.round(s.fanBase).toLocaleString()}` : '';
+    els.stadiumLine.textContent = `${sn} · ${s.stadiumCapacity.toLocaleString()} seats${fb}`;
   }
   const rounds = s.leagueRounds || [];
   const ri = s.leagueRoundIndex ?? 0;
@@ -825,7 +851,7 @@ function renderSquad() {
             <tr>
               <td>${p.name}${p.onLoan ? ' <span class="tag-loan">loan</span>' : ''}</td><td>${p.pos}</td><td>${p.ovr}</td><td>${p.age}</td>
               <td class="muted">${contractLabel(p)}</td>
-              <td class="muted">${p.personality || '—'}</td>
+              <td class="muted">${formatTrait(p.personality)}</td>
               <td>${p.lApps ?? 0}</td><td class="muted">${(p.cApps ?? 0) + (p.fApps ?? 0)} app · ${(p.cGoals ?? 0) + (p.fGoals ?? 0)} gl</td>
               <td>${p.lGoals ?? 0}</td><td>${p.lAssists ?? 0}</td><td>${formatAvgRtg(p)}</td>
               <td>${formatMoney(p.wage)}</td>
@@ -846,6 +872,18 @@ function renderTransfers() {
   const free = s.freeAgentList || [];
   const loans = s.loanList || [];
   const bids = s.playerBuyOffers || [];
+
+  const passFilter = (p) => transferPosFilter === 'ALL' || p.pos === transferPosFilter;
+
+  const filterBtns = ['ALL', ...TRANSFER_FILTER_POSITIONS]
+    .map(
+      (fk) =>
+        `<button type="button" class="pos-filter-btn ${transferPosFilter === fk ? 'active' : ''}" data-transfer-pos="${fk}" title="Filter by role">${fk}</button>`
+    )
+    .join('');
+  const filteredPerm = perm.filter(passFilter);
+  const filteredFree = free.filter(passFilter);
+  const filteredLoans = loans.filter(passFilter);
   const contractSelect = (kind, p) => {
     if (kind === 'loan') return '<span class="muted">Season</span>';
     const opts = [1, 2, 3, 4, 5]
@@ -872,6 +910,10 @@ function renderTransfers() {
             </tr>`;
   };
   return `
+    <div class="panel transfer-filter-panel">
+      <p class="transfer-filter-intro"><strong>Filter by role</strong> — permanent, free, and loan lists (GK, full-backs, wide players, pivots).</p>
+      <div class="pos-filter-bar" role="toolbar" aria-label="Position filters">${filterBtns}</div>
+    </div>
     <div class="panel">
       <h2>Incoming bids (other clubs)</h2>
       <p class="muted">AI clubs may table offers for your players — bids scale to the buyer's division (Premier League suitors can bid £5–40m, lower-league clubs bid in five figures). Accept to bank the fee and remove the player (min. 16 squad players).</p>
@@ -906,7 +948,10 @@ function renderTransfers() {
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
-          ${perm.map((p) => row(p, 'perm')).join('') || '<tr><td colspan="8" class="muted">No listings</td></tr>'}
+          ${
+            filteredPerm.map((p) => row(p, 'perm')).join('') ||
+            `<tr><td colspan="8" class="muted">No listings${transferPosFilter !== 'ALL' ? ` for ${transferPosFilter}` : ''}.</td></tr>`
+          }
         </tbody>
       </table>
     </div>
@@ -916,7 +961,10 @@ function renderTransfers() {
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
-          ${free.map((p) => row(p, 'free')).join('') || '<tr><td colspan="8" class="muted">No free agents</td></tr>'}
+          ${
+            filteredFree.map((p) => row(p, 'free')).join('') ||
+            `<tr><td colspan="8" class="muted">No free agents${transferPosFilter !== 'ALL' ? ` listed as ${transferPosFilter}` : ''}.</td></tr>`
+          }
         </tbody>
       </table>
     </div>
@@ -926,7 +974,10 @@ function renderTransfers() {
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Loan fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
-          ${loans.map((p) => row(p, 'loan')).join('') || '<tr><td colspan="8" class="muted">No loan offers</td></tr>'}
+          ${
+            filteredLoans.map((p) => row(p, 'loan')).join('') ||
+            `<tr><td colspan="8" class="muted">No loan offers${transferPosFilter !== 'ALL' ? ` for ${transferPosFilter}` : ''}.</td></tr>`
+          }
         </tbody>
       </table>
     </div>
@@ -1250,6 +1301,12 @@ function wireTab() {
   }
 
   if (currentTab === 'transfers') {
+    $$('[data-transfer-pos]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        transferPosFilter = btn.dataset.transferPos || 'ALL';
+        render();
+      });
+    });
     $$('[data-sign]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const sel = btn.closest('tr')?.querySelector('[data-contract-years]');

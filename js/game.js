@@ -29,6 +29,16 @@ import {
   CLUB_IDENTITIES,
 } from './club-meta.js';
 import { CLUB_BADGE_IDS } from './club-badges.js';
+import {
+  rollDetailedPosition,
+  positionSortKey,
+  scorerWeightForPosition,
+  squadAttackDefence,
+  simulateSideGoals,
+  pickStartersFromSquad,
+  migrateLegacyPosition,
+  suggestRandomPosition,
+} from './positions.js';
 
 const SAVE_KEY = 'football-chairman-save-v5';
 
@@ -182,12 +192,15 @@ export function feeForPlayer(wage, ovr, age, econ, rng = Math.random) {
 }
 
 function randomPlayer(rng, tier, econ) {
-  const positions = ['GK', 'DF', 'DF', 'MF', 'MF', 'FW'];
-  const pos = positions[Math.floor(rng() * positions.length)];
+  const pos = rollDetailedPosition(rng);
   const base = 45 + tier * 4 + Math.floor(rng() * 18);
-  const age = 18 + Math.floor(rng() * 17);
-  const ovr = Math.min(94, base);
-  const wage = wageForOvr(ovr, econ, rng);
+  const age = 18 + Math.floor(rng() * 16);
+  let ovr = Math.min(94, base);
+  if (age <= 22 && rng() < 0.55) ovr = Math.min(94, ovr + Math.floor(rng() * 3));
+  const personality = rollPlayerPersonality(rng, pos);
+  let wage = wageForOvr(ovr, econ, rng);
+  if (personality === 'mercenary') wage = Math.round(wage * (1.06 + rng() * 0.08));
+  if (personality === 'loyal') wage = Math.round(wage * (0.93 + rng() * 0.05));
   const fee = feeForPlayer(wage, ovr, age, econ, rng);
   return ensurePlayerStats({
     id: `p-${Math.floor(rng() * 1e12)}-${Math.floor(rng() * 1e12)}`,
@@ -198,7 +211,7 @@ function randomPlayer(rng, tier, econ) {
     wage,
     askingFee: fee,
     morale: 70 + Math.floor(rng() * 25),
-    personality: rollPlayerPersonality(rng),
+    personality,
     lApps: 0,
     cApps: 0,
     fApps: 0,
@@ -256,14 +269,7 @@ function weightedPick(items, weightFn, rng) {
 }
 
 function pickStarters(squad, rng) {
-  if (!squad?.length) return [];
-  const gks = squad.filter((p) => p.pos === 'GK');
-  const out = squad.filter((p) => p.pos !== 'GK');
-  const shuffled = [...out].sort(() => rng() - 0.5);
-  const take = shuffled.slice(0, 10);
-  const gk = gks[Math.floor(rng() * gks.length)] || squad[0];
-  const starters = [gk, ...take].filter(Boolean);
-  return starters.length >= 11 ? starters.slice(0, 11) : squad.slice(0, Math.min(11, squad.length));
+  return pickStartersFromSquad(squad, rng);
 }
 
 function collectGoalAssignments(starters, goalsFor, rng) {
@@ -272,11 +278,7 @@ function collectGoalAssignments(starters, goalsFor, rng) {
   const scorable = starters.filter((p) => p.pos !== 'GK');
   const pool = scorable.length ? scorable : starters;
   for (let g = 0; g < goalsFor; g++) {
-    const scorer = weightedPick(
-      pool,
-      (p) => (p.pos === 'FW' ? 3.2 : p.pos === 'MF' ? 1.5 : 0.55),
-      rng
-    );
+    const scorer = weightedPick(pool, (p) => scorerWeightForPosition(p.pos), rng);
     let assistPlayer = null;
     if (rng() < 0.87 && pool.length > 1) {
       const others = pool.filter((p) => p !== scorer);
@@ -327,8 +329,7 @@ function recordSquadMatchStats(squad, goalsFor, goalsAgainst, rng, kind) {
 }
 
 function sortLineupForDisplay(starters) {
-  const ord = { GK: 0, DF: 1, MF: 2, FW: 3 };
-  return [...(starters || [])].sort((a, b) => (ord[a.pos] ?? 9) - (ord[b.pos] ?? 9));
+  return [...(starters || [])].sort((a, b) => positionSortKey(a.pos) - positionSortKey(b.pos));
 }
 
 function buildChronologicalGoalEvents(homeName, awayName, homeAssigns, awayAssigns, rng) {
@@ -359,7 +360,7 @@ function buildChronologicalGoalEvents(homeName, awayName, homeAssigns, awayAssig
   return rows;
 }
 
-function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, awayRet, rng) {
+function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, awayRet, rng, attendanceMeta) {
   const mw = (state.leagueRoundIndex ?? 0) + 1;
   const leagueLabel = ENGLISH_PYRAMID[state.leagueIndex]?.name ?? 'League';
   const goals = buildChronologicalGoalEvents(
@@ -380,10 +381,14 @@ function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, away
       text: `${g.minute}' — GOAL ${tag}: ${g.scorer}${g.assist ? ` · assist ${g.assist}` : ''}`,
     });
   }
+  const ftExtra =
+    attendanceMeta?.show && attendanceMeta.attendance != null && attendanceMeta.stadiumCapacity
+      ? ` · Attendance: ${attendanceMeta.attendance.toLocaleString()} / ${attendanceMeta.stadiumCapacity.toLocaleString()}`
+      : '';
   feed.push({
     phase: 'after',
     minute: 90,
-    text: `Full time — ${home.name} ${hGoals}–${aGoals} ${away.name}`,
+    text: `Full time — ${home.name} ${hGoals}–${aGoals} ${away.name}${ftExtra}`,
   });
   return {
     kind: 'league',
@@ -391,29 +396,44 @@ function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, away
     matchweek: mw,
     homeName: home.name,
     awayName: away.name,
-    homeLineup: sortLineupForDisplay(homeRet?.starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr })),
-    awayLineup: sortLineupForDisplay(awayRet?.starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr })),
-    homeBench: (homeRet?.bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr })),
-    awayBench: (awayRet?.bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr })),
+    homeLineup: sortLineupForDisplay(homeRet?.starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr, age: p.age })),
+    awayLineup: sortLineupForDisplay(awayRet?.starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr, age: p.age })),
+    homeBench: (homeRet?.bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr, age: p.age })),
+    awayBench: (awayRet?.bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr, age: p.age })),
     homeGoals: hGoals,
     awayGoals: aGoals,
     playerIsHome: !!home.isPlayer,
+    attendance: attendanceMeta?.attendance ?? null,
+    stadiumCapacity: attendanceMeta?.stadiumCapacity ?? null,
+    stadiumHint: attendanceMeta?.stadiumHint ?? '',
     feed,
   };
 }
 
 function makeGuestLineup(rng) {
-  const posOrder = ['GK', 'DF', 'DF', 'DF', 'MF', 'MF', 'MF', 'MF', 'FW', 'FW', 'FW'];
-  return posOrder.map((pos) => ({
+  const starters = Array.from({ length: 11 }, () => ({
     name: randomPlayerName(rng),
-    pos,
+    pos: rollDetailedPosition(rng),
     ovr: 45 + Math.floor(rng() * 18),
+    age: 18 + Math.floor(rng() * 16),
   }));
+  if (!starters.some((p) => p.pos === 'GK')) starters[0].pos = 'GK';
+  return starters;
 }
 
 function mapLineupRows(starters, bench) {
-  const startersM = sortLineupForDisplay(starters).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr }));
-  const benchM = (bench || []).slice(0, 9).map((p) => ({ name: p.name, pos: p.pos, ovr: p.ovr }));
+  const startersM = sortLineupForDisplay(starters).map((p) => ({
+    name: p.name,
+    pos: p.pos,
+    ovr: p.ovr,
+    age: p.age ?? null,
+  }));
+  const benchM = (bench || []).slice(0, 9).map((p) => ({
+    name: p.name,
+    pos: p.pos,
+    ovr: p.ovr,
+    age: p.age ?? null,
+  }));
   return { startersM, benchM };
 }
 
@@ -644,7 +664,7 @@ function defaultState() {
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 11,
+    version: 12,
     seed,
     week: 1,
     season: 1,
@@ -660,6 +680,7 @@ function defaultState() {
     cash: startEcon.startingCash,
     debt: 0,
     stadiumCapacity: 2_800,
+    fanBase: 9_600,
     ticketPrice: 18,
     reputation: 12,
     board: { fans: 68, investors: 65, media: 62 },
@@ -995,6 +1016,53 @@ function migrateToV11(s) {
   s.version = 11;
 }
 
+function estimateOpponentVenueCapacity(team, leagueIndex) {
+  const li = leagueIndex ?? 5;
+  const tier = Math.max(0, ENGLISH_PYRAMID.length - 1 - li);
+  const str = team?.squadStrength ?? 54;
+  return Math.min(76_000, Math.round(2600 + tier * 2400 + str * 34));
+}
+
+function computeGateAttendanceFigures(state, homeTeam, awayTeam, rng) {
+  const cap = homeTeam.isPlayer ? state.stadiumCapacity : estimateOpponentVenueCapacity(homeTeam, state.leagueIndex);
+  const fanBase = homeTeam.isPlayer ? (state.fanBase ?? Math.round(cap * 3.35)) : Math.round(cap * 0.74);
+  const opp = awayTeam;
+  const oppStrength = opp.isPlayer
+    ? state.squad.reduce((s, p) => s + p.ovr, 0) / Math.max(1, state.squad.length)
+    : opp.squadStrength ?? 54;
+  const oppStrengthNorm = Math.max(0, Math.min(1.22, (oppStrength - 40) / 36));
+  const form = Math.max(-5, Math.min(5, homeTeam.form ?? 0));
+  const hype = oppStrengthNorm * 500 + form * 300;
+  const randomness = rng() * 2000 - 1000;
+  const attendance = Math.min(Math.max(0, Math.floor(fanBase + hype + randomness)), cap);
+  const fillRatio = cap > 0 ? attendance / cap : 0;
+  const stadiumHint =
+    homeTeam.isPlayer && fillRatio > 0.95 ? 'Stadium nearly full — consider expanding when finances allow.' : '';
+  return { attendance, stadiumCapacity: cap, stadiumHint, show: true };
+}
+
+function migratePlayerPositionsGranular(p, rng) {
+  if (!p || !p.pos) return;
+  p.pos = migrateLegacyPosition(p.pos, rng);
+}
+
+function migrateToV12(s) {
+  if ((s.version || 0) >= 12) return;
+  const rng = mulberry32((s.seed || 1) + 120_012);
+  if (s.fanBase == null || s.fanBase < 100) {
+    const cap = s.stadiumCapacity || 2800;
+    s.fanBase = Math.min(65_000, Math.round(cap * 3.5 + (s.reputation || 12) * 420));
+  }
+  for (const p of s.squad || []) migratePlayerPositionsGranular(p, rng);
+  for (const p of s.transferList || []) migratePlayerPositionsGranular(p, rng);
+  for (const p of s.freeAgentList || []) migratePlayerPositionsGranular(p, rng);
+  for (const p of s.loanList || []) migratePlayerPositionsGranular(p, rng);
+  for (const t of s.table || []) {
+    for (const p of t.squad || []) migratePlayerPositionsGranular(p, rng);
+  }
+  s.version = 12;
+}
+
 export class Game {
   constructor() {
     this.state = defaultState();
@@ -1131,21 +1199,33 @@ export class Game {
 
     const playerSquadAvg =
       this.state.squad.reduce((s, p) => s + p.ovr, 0) / Math.max(1, this.state.squad.length);
-    let hStr = home.isPlayer ? playerSquadAvg + this.managerBonus() : home.squadStrength;
-    let aStr = away.isPlayer ? playerSquadAvg + this.managerBonus() : away.squadStrength;
 
-    if (home.isPlayer) hStr += computePlayerMatchBoost(this.state);
-    if (away.isPlayer) aStr += computePlayerMatchBoost(this.state) * 0.82;
+    const hStr = home.isPlayer ? playerSquadAvg + this.managerBonus() : home.squadStrength;
+    const aStr = away.isPlayer ? playerSquadAvg + this.managerBonus() : away.squadStrength;
 
-    const homeAdv = 2.4 + (rng() - 0.5) * 5;
-    let hGoals = Math.max(
-      0,
-      Math.round((hStr / 18) * (0.9 + rng() * 0.35) + homeAdv * 0.08 + (rng() - 0.4) * 2)
-    );
-    let aGoals = Math.max(
-      0,
-      Math.round((aStr / 18) * (0.85 + rng() * 0.35) + (rng() - 0.5) * 2)
-    );
+    const homeAtkSquad = home.isPlayer ? this.state.squad : home.squad;
+    const homeDefSquad = homeAtkSquad;
+    const awayAtkSquad = away.isPlayer ? this.state.squad : away.squad;
+    const awayDefSquad = awayAtkSquad;
+
+    let { attack: hAt } = squadAttackDefence(homeAtkSquad, hStr);
+    let { defence: hDef } = squadAttackDefence(homeDefSquad, hStr);
+    let { attack: aAt } = squadAttackDefence(awayAtkSquad, aStr);
+    let { defence: aDef } = squadAttackDefence(awayDefSquad, aStr);
+
+    const matchBoost = computePlayerMatchBoost(this.state);
+    if (home.isPlayer) {
+      hAt += this.managerBonus() * 0.34 + matchBoost * 0.36;
+      hDef += this.managerBonus() * 0.2 + matchBoost * 0.14;
+    }
+    if (away.isPlayer) {
+      aAt += this.managerBonus() * 0.3 + matchBoost * 0.24;
+      aDef += this.managerBonus() * 0.18 + matchBoost * 0.09;
+    }
+
+    const homeBonus = 0.011;
+    let hGoals = simulateSideGoals(hAt, aDef, rng, { homeBonus });
+    let aGoals = simulateSideGoals(aAt, hDef, rng, { homeBonus: 0 });
 
     const injN = this.state.squad.filter((p) => p.personality === 'injury_prone').length;
     if (home.isPlayer && rng() < Math.min(0.1, 0.025 + injN * 0.02)) hGoals = Math.max(0, hGoals - 1);
@@ -1181,6 +1261,10 @@ export class Game {
       const repRng = mulberry32(
         this.state.seed + this.state.week * 1_000_003 + this.state.leagueRoundIndex * 17 + homeId.charCodeAt(2) + 90210
       );
+      const attRng = mulberry32(
+        this.state.seed + this.state.week * 1_000_003 + this.state.leagueRoundIndex * 17 + homeId.charCodeAt(2) + 45111
+      );
+      const attendanceMeta = computeGateAttendanceFigures(this.state, home, away, attRng);
       this.state.lastMatchReport = buildLeagueMatchReport(
         this.state,
         home,
@@ -1189,7 +1273,8 @@ export class Game {
         aGoals,
         homeRet,
         awayRet,
-        repRng
+        repRng,
+        attendanceMeta
       );
     }
     return { hGoals, aGoals };
@@ -1266,15 +1351,8 @@ export class Game {
 
     const playerSquadAvg = s.squad.reduce((x, p) => x + p.ovr, 0) / Math.max(1, s.squad.length);
     const pStr = playerSquadAvg + this.managerBonus() + rng() * 4;
-    const homeBoost = 2.8;
-    const pGoals = Math.max(
-      0,
-      Math.round((pStr / 18) * (0.95 + rng() * 0.4) + homeBoost * 0.1 + (rng() - 0.35) * 2)
-    );
-    const oGoals = Math.max(
-      0,
-      Math.round((oppStrength / 18) * (0.88 + rng() * 0.35) + (rng() - 0.55) * 2)
-    );
+    const pGoals = simulateSideGoals(pStr * 0.58, oppStrength * 0.535, rng, { homeBonus: 0.012 });
+    const oGoals = simulateSideGoals(oppStrength * 0.56, pStr * 0.528, rng, { homeBonus: 0 });
 
     s.cash += Math.floor(this.matchdayRevenue(0.88));
     const label = cupMeta.label || `${key} tie`;
@@ -1336,14 +1414,8 @@ export class Game {
     const oppStrength = 36 + rng() * 22;
     const playerSquadAvg = s.squad.reduce((x, p) => x + p.ovr, 0) / Math.max(1, s.squad.length);
     const pStr = playerSquadAvg + this.managerBonus() * 0.6 + rng() * 3;
-    const pGoals = Math.max(
-      0,
-      Math.round((pStr / 18) * (0.88 + rng() * 0.35) + (rng() - 0.4) * 2)
-    );
-    const oGoals = Math.max(
-      0,
-      Math.round((oppStrength / 18) * (0.85 + rng() * 0.35) + (rng() - 0.5) * 2)
-    );
+    const pGoals = simulateSideGoals(pStr * 0.56, oppStrength * 0.528, rng, { homeBonus: 0 });
+    const oGoals = simulateSideGoals(oppStrength * 0.55, pStr * 0.52, rng, { homeBonus: 0 });
     s.cash += Math.floor(this.matchdayRevenue(0.12));
     recordSquadMatchStats(s.squad, pGoals, oGoals, rng, 'friendly');
     s.history.unshift({
@@ -1361,14 +1433,8 @@ export class Game {
     const oppStrength = 36 + rng() * 22;
     const playerSquadAvg = s.squad.reduce((x, p) => x + p.ovr, 0) / Math.max(1, s.squad.length);
     const pStr = playerSquadAvg + this.managerBonus() * 0.6 + rng() * 3;
-    const pGoals = Math.max(
-      0,
-      Math.round((pStr / 18) * (0.88 + rng() * 0.35) + (rng() - 0.4) * 2)
-    );
-    const oGoals = Math.max(
-      0,
-      Math.round((oppStrength / 18) * (0.85 + rng() * 0.35) + (rng() - 0.5) * 2)
-    );
+    const pGoals = simulateSideGoals(pStr * 0.56, oppStrength * 0.528, rng, { homeBonus: 0 });
+    const oGoals = simulateSideGoals(oppStrength * 0.55, pStr * 0.52, rng, { homeBonus: 0 });
     const rngLine = mulberry32(s.seed + s.week * 72_003);
     const oppStarters = makeGuestLineup(rngLine);
     const oppBench = makeGuestLineup(mulberry32(s.seed + s.week * 72_004)).slice(0, 9);
@@ -1890,15 +1956,16 @@ export class Game {
     };
 
     if (s.staff.dof.hired && rng() < 0.18) {
-      const holes = ['full-back', 'central midfield', 'goalkeeper cover'];
-      const h = holes[Math.floor(rng() * holes.length)];
+      const groupsNeeded = ['DEF', 'MID', 'FWD', 'GK', 'DEF', 'MID'];
+      const grp = groupsNeeded[Math.floor(rng() * groupsNeeded.length)];
+      const posNeed = suggestRandomPosition(grp, rng);
       const nm = s.staff.dof.name;
       push({
         id: `adv-${++s.advisoryId}`,
         roleKey: 'dof',
         staffName: nm,
         headline: 'Squad balance',
-        body: `${nm} (director of football): we're light on ${h}. Prioritise loans or free agents before the schedule thickens.`,
+        body: `${nm} (director of football): we're short at ${posNeed}. Prioritise loans or permanent deals before fixtures bunch up.`,
         actions: [
           { id: 'pulse_market', label: 'Refresh scouting lists' },
           { id: 'dismiss', label: 'Noted, thanks' },
@@ -1926,7 +1993,7 @@ export class Game {
         roleKey: 'head_scout',
         staffName: nm,
         headline: 'Recruitment',
-        body: `${nm} flags ${p.name} (${p.pos}, OVR ${p.ovr}) as a strong fit on current wages — open negotiations below when ready.`,
+        body: `${nm} flags ${p.name} (${p.pos}, age ${p.age ?? '—'}, OVR ${p.ovr}) as a strong fit on current wages — open negotiations below when ready.`,
         suggestedPlayerId: p.id,
         suggestedListKey: 'transferList',
         actions: [
@@ -2431,6 +2498,7 @@ export class Game {
     this.state.seasonFinance = this.state.seasonFinance || {};
     this.state.seasonFinance.stadiumSpend = (this.state.seasonFinance.stadiumSpend || 0) + cost;
     this.state.stadiumCapacity += extraSeats;
+    this.state.fanBase = Math.min(130_000, Math.round((this.state.fanBase ?? 9600) + extraSeats * 0.88));
     this._emit();
     this.save();
     return true;
@@ -2655,6 +2723,7 @@ export class Game {
         migrateToV9(this.state);
         migrateToV10(this.state);
         migrateToV11(this.state);
+        migrateToV12(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);

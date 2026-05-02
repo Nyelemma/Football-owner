@@ -1670,3 +1670,55 @@ body.onboarding-open .brand-block {
   margin: 0 0 0.85rem;
   border: 1px solid var(--border);
 }
+
+.transfer-filter-intro {
+  margin: 0 0 0.65rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.pos-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+button.pos-filter-btn {
+  padding: 0.28rem 0.52rem;
+  font-size: 0.74rem;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--pitch);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: none;
+}
+
+button.pos-filter-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+button.pos-filter-btn.active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.match-attendance {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+
+.stadium-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--warn);
+}
+
+.transfer-filter-panel.panel {
+  padding-bottom: 0.85rem;
+}
