@@ -140,25 +140,25 @@ export function squadAttackDefence(squad, strengthFallback) {
   };
 }
 
-const SCORE_BIAS = [0, 1, 1, 1, 2, 2, 2, 2, 3, 3, 4];
+const SCORE_BIAS = [0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
 
 function goalChanceForPeriod(teamAttack, oppDefence) {
   const diff = teamAttack - oppDefence;
-  return Math.max(0.042, Math.min(0.128, 0.072 + diff * 0.0048));
+  return Math.max(0.024, Math.min(0.078, 0.044 + diff * 0.0026));
 }
 
-/** ~10 low-intensity periods per side — totals usually 0–3, capped at 5 */
-export function simulateSideGoals(teamAttack, oppDefence, rng, { periods = 10, homeBonus = 0 } = {}) {
+/** Fewer “shooting periods”, softer bias — totals cluster 0–2, max 4. */
+export function simulateSideGoals(teamAttack, oppDefence, rng, { periods = 7, homeBonus = 0 } = {}) {
   let g = 0;
   for (let i = 0; i < periods; i++) {
     const p = goalChanceForPeriod(teamAttack, oppDefence) + homeBonus;
     if (rng() < p) g++;
   }
-  if (rng() < 0.42) {
+  if (rng() < 0.34) {
     const bias = SCORE_BIAS[Math.floor(rng() * SCORE_BIAS.length)];
-    g = Math.round(g * 0.62 + bias * 0.38);
+    g = Math.round(g * 0.78 + bias * 0.22);
   }
-  return Math.min(5, Math.max(0, g));
+  return Math.min(4, Math.max(0, g));
 }
 
 /** Standard 4-4-2 style template: 1 GK, 4 DEF-line, 4 MID-line, 2 up top (best available by OVR). */

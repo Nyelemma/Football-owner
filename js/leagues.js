@@ -120,11 +120,57 @@ export function randomStaffName(rng) {
   return `${f} ${s}`;
 }
 
+function playerHomeInFixture(round, playerTeamId) {
+  const f = round.find((x) => x.home === playerTeamId || x.away === playerTeamId);
+  if (!f) return null;
+  return f.home === playerTeamId;
+}
+
+function flipFixtureForTeam(round, playerTeamId) {
+  const ix = round.findIndex((f) => f.home === playerTeamId || f.away === playerTeamId);
+  if (ix < 0) return false;
+  const f = round[ix];
+  round[ix] = { home: f.away, away: f.home };
+  return true;
+}
+
+/** Break long home-only or away-only runs for the player's club (first half only; second half remains strict reverse). */
+export function squashPlayerVenueStreaks(roundsFirst, playerTeamId, maxSame = 2) {
+  if (!playerTeamId || !roundsFirst?.length || maxSame < 1) return;
+
+  for (let attempt = 0; attempt < 80; attempt++) {
+    let last = /** @type {boolean | null} */ (null);
+    let streak = 0;
+    let flipped = false;
+    for (let i = 0; i < roundsFirst.length; i++) {
+      const h = playerHomeInFixture(roundsFirst[i], playerTeamId);
+      if (h == null) continue;
+      if (last === null) {
+        last = h;
+        streak = 1;
+        continue;
+      }
+      if (h === last) {
+        streak++;
+        if (streak > maxSame) {
+          flipFixtureForTeam(roundsFirst[i], playerTeamId);
+          flipped = true;
+          break;
+        }
+      } else {
+        last = h;
+        streak = 1;
+      }
+    }
+    if (!flipped) break;
+  }
+}
+
 /**
  * Double round-robin as weekly rounds (each round: every team plays once).
- * For 10 teams → 9 + 9 = 18 rounds — home and away vs every opponent.
+ * Second half mirrors the first by swapping venues. Player venue streaks are capped in the first half.
  */
-export function buildDoubleRoundRobinRounds(teamIds, seed) {
+export function buildDoubleRoundRobinRounds(teamIds, seed, playerTeamId = null) {
   const rng = mulberry32(seed + 333);
   const teams = [...teamIds];
   for (let i = teams.length - 1; i > 0; i--) {
@@ -145,9 +191,8 @@ export function buildDoubleRoundRobinRounds(teamIds, seed) {
     roundsFirst.push(pairs);
     order.splice(1, 0, order.pop());
   }
-  const roundsSecond = roundsFirst.map((round) =>
-    round.map(({ home, away }) => ({ home: away, away: home }))
-  );
+  squashPlayerVenueStreaks(roundsFirst, playerTeamId, 2);
+  const roundsSecond = roundsFirst.map((round) => round.map(({ home, away }) => ({ home: away, away: home })));
   return [...roundsFirst, ...roundsSecond];
 }
 

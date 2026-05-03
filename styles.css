@@ -1713,6 +1713,47 @@ button.pos-filter-btn.active {
   font-size: 0.9rem;
 }
 
+.match-attendance-banner {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.85rem;
+  background: rgba(74, 232, 165, 0.08);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+}
+
+.match-attendance-lbl {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-dim);
+  font-weight: 700;
+}
+
+.match-attendance-val {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.match-attendance-val strong {
+  color: var(--accent);
+}
+
+.match-attendance-venue {
+  font-size: 0.82rem;
+  flex-basis: 100%;
+}
+
+.match-attendance-banner .stadium-hint {
+  flex-basis: 100%;
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  color: var(--warn);
+}
+
 .stadium-hint {
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
@@ -1721,4 +1762,65 @@ button.pos-filter-btn.active {
 
 .transfer-filter-panel.panel {
   padding-bottom: 0.85rem;
+}
+
+.roster-filter-panel .roster-filter-form {
+  margin: 0 0 0.75rem;
+}
+
+.roster-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem 0.65rem;
+  align-items: end;
+}
+
+.roster-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.roster-filter-select {
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--pitch);
+  color: var(--text);
+  font-family: inherit;
+}
+
+.roster-filter-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.roster-filter-count {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+}
+
+button.linkish {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+button.linkish:hover {
+  color: var(--text);
 }

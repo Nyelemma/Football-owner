@@ -155,7 +155,175 @@ function syncHelpOverlay() {
 let pyramidView = { league: null, teamId: '' };
 let pyramidFlash = { text: '', ok: false };
 
-let transferPosFilter = 'ALL';
+const TRANSFER_POS_OPTIONS = [['ALL', 'All positions'], ...TRANSFER_FILTER_POSITIONS.map((p) => [p, p])];
+
+const ROSTER_AGE_OPTS = (() => {
+  const o = [['', 'Any']];
+  for (let a = 18; a <= 33; a++) o.push([String(a), String(a)]);
+  return o;
+})();
+
+const ROSTER_OVR_MIN = [
+  ['', 'Any min'],
+  ['40', '40+'],
+  ['45', '45+'],
+  ['50', '50+'],
+  ['55', '55+'],
+  ['60', '60+'],
+  ['65', '65+'],
+  ['70', '70+'],
+];
+
+const ROSTER_OVR_MAX = [
+  ['', 'Any max'],
+  ['55', '≤55'],
+  ['60', '≤60'],
+  ['65', '≤65'],
+  ['70', '≤70'],
+  ['75', '≤75'],
+  ['80', '≤80'],
+  ['85', '≤85'],
+  ['90', '≤90'],
+];
+
+const ROSTER_WAGE_MAX = [
+  ['', 'Any wage'],
+  ['500', '≤ £500/wk'],
+  ['1000', '≤ £1k/wk'],
+  ['2000', '≤ £2k/wk'],
+  ['3500', '≤ £3.5k/wk'],
+  ['5000', '≤ £5k/wk'],
+  ['8000', '≤ £8k/wk'],
+  ['15000', '≤ £15k/wk'],
+  ['30000', '≤ £30k/wk'],
+  ['60000', '≤ £60k/wk'],
+  ['120000', '≤ £120k/wk'],
+];
+
+const TRANSFER_FEE_MAX = [
+  ['', 'Any fee'],
+  ['0', 'Free only'],
+  ['25000', '≤ £25k'],
+  ['50000', '≤ £50k'],
+  ['100000', '≤ £100k'],
+  ['250000', '≤ £250k'],
+  ['500000', '≤ £500k'],
+  ['1000000', '≤ £1m'],
+  ['3000000', '≤ £3m'],
+  ['10000000', '≤ £10m'],
+  ['30000000', '≤ £30m'],
+];
+
+const TRAIT_FILTER_OPTS = [
+  ['', 'Any trait'],
+  ['loyal', 'Loyal'],
+  ['mercenary', 'Mercenary'],
+  ['leader', 'Leader'],
+  ['injury_prone', 'Injury prone'],
+  ['big_game', 'Big game'],
+];
+
+const DEFAULT_ROSTER_FILTERS = {
+  pos: 'ALL',
+  ageMin: '',
+  ageMax: '',
+  ovrMin: '',
+  ovrMax: '',
+  wageMax: '',
+  trait: '',
+};
+
+const DEFAULT_TRANSFER_FILTERS = {
+  ...DEFAULT_ROSTER_FILTERS,
+  feeMax: '',
+};
+
+let transferListFilters = { ...DEFAULT_TRANSFER_FILTERS };
+let squadListFilters = { ...DEFAULT_ROSTER_FILTERS };
+let pyramidRosterFilters = { ...DEFAULT_ROSTER_FILTERS };
+
+function selectOptionsHtml(rows, selected) {
+  return rows
+    .map(([val, lab]) => `<option value="${val}"${String(selected) === String(val) ? ' selected' : ''}>${lab}</option>`)
+    .join('');
+}
+
+function playerMatchesRosterFilters(p, f) {
+  if (!p) return false;
+  if (f.pos !== 'ALL' && (p.pos || '') !== f.pos) return false;
+  const age = Number(p.age);
+  if (f.ageMin !== '' && Number.isFinite(age) && age < Number(f.ageMin)) return false;
+  if (f.ageMax !== '' && Number.isFinite(age) && age > Number(f.ageMax)) return false;
+  const ovr = Number(p.ovr);
+  if (f.ovrMin !== '' && Number.isFinite(ovr) && ovr < Number(f.ovrMin)) return false;
+  if (f.ovrMax !== '' && Number.isFinite(ovr) && ovr > Number(f.ovrMax)) return false;
+  if (f.wageMax !== '') {
+    const w = Number(p.wage ?? 0);
+    if (w > Number(f.wageMax)) return false;
+  }
+  if (f.trait !== '' && (p.personality || '') !== f.trait) return false;
+  return true;
+}
+
+function playerMatchesTransferFilters(p, f) {
+  if (!playerMatchesRosterFilters(p, f)) return false;
+  if (f.feeMax !== '') {
+    const fee = Number(p.askingFee ?? 0);
+    if (f.feeMax === '0') {
+      if (fee !== 0) return false;
+    } else if (fee > Number(f.feeMax)) return false;
+  }
+  return true;
+}
+
+function rosterFilterBarHtml(filters, { showFee = false, formId = 'roster-filters', resetKey = 'roster' } = {}) {
+  return `
+    <form id="${formId}" class="roster-filter-form" aria-label="Player filters">
+      <div class="roster-filter-grid">
+        <label class="roster-filter-field">Position
+          <select name="pos" class="roster-filter-select" data-filter-key="pos">${selectOptionsHtml(TRANSFER_POS_OPTIONS, filters.pos)}</select>
+        </label>
+        <label class="roster-filter-field">Age from
+          <select name="ageMin" class="roster-filter-select" data-filter-key="ageMin">${selectOptionsHtml(ROSTER_AGE_OPTS, filters.ageMin)}</select>
+        </label>
+        <label class="roster-filter-field">Age to
+          <select name="ageMax" class="roster-filter-select" data-filter-key="ageMax">${selectOptionsHtml(ROSTER_AGE_OPTS, filters.ageMax)}</select>
+        </label>
+        <label class="roster-filter-field">OVR min
+          <select name="ovrMin" class="roster-filter-select" data-filter-key="ovrMin">${selectOptionsHtml(ROSTER_OVR_MIN, filters.ovrMin)}</select>
+        </label>
+        <label class="roster-filter-field">OVR max
+          <select name="ovrMax" class="roster-filter-select" data-filter-key="ovrMax">${selectOptionsHtml(ROSTER_OVR_MAX, filters.ovrMax)}</select>
+        </label>
+        <label class="roster-filter-field">Wage max
+          <select name="wageMax" class="roster-filter-select" data-filter-key="wageMax">${selectOptionsHtml(ROSTER_WAGE_MAX, filters.wageMax)}</select>
+        </label>
+        <label class="roster-filter-field">Trait
+          <select name="trait" class="roster-filter-select" data-filter-key="trait">${selectOptionsHtml(TRAIT_FILTER_OPTS, filters.trait)}</select>
+        </label>
+        ${
+          showFee
+            ? `<label class="roster-filter-field">Fee max
+          <select name="feeMax" class="roster-filter-select" data-filter-key="feeMax">${selectOptionsHtml(TRANSFER_FEE_MAX, filters.feeMax)}</select>
+        </label>`
+            : ''
+        }
+        <span class="roster-filter-actions">
+          <button type="button" class="muted-btn" data-reset-filters="${resetKey}">Clear filters</button>
+        </span>
+      </div>
+    </form>`;
+}
+
+function readFiltersFromForm(formEl, defaults) {
+  const out = { ...defaults };
+  if (!formEl) return out;
+  formEl.querySelectorAll('[data-filter-key]').forEach((sel) => {
+    const k = sel.getAttribute('data-filter-key');
+    if (k) out[k] = sel.value;
+  });
+  return out;
+}
 
 function formatTrait(personalityKey) {
   if (!personalityKey) return '—';
@@ -304,6 +472,37 @@ function renderMailboxHTML() {
     </div>`;
 }
 
+function matchAttendanceMarkup(r) {
+  let line =
+    typeof r.attendanceLine === 'string' && r.attendanceLine.trim().length >= 3 ? r.attendanceLine.trim() : '';
+  let attend =
+    typeof r.attendance === 'number'
+      ? r.attendance
+      : line
+        ? Number(String(line.split('/')[0]).replace(/[^\d]/g, ''))
+        : Number(r?.attendance);
+  let cap =
+    typeof r.stadiumCapacity === 'number'
+      ? r.stadiumCapacity
+      : line
+        ? Number(String(line.split('/')[1]).replace(/[^\d]/g, ''))
+        : Number(r?.stadiumCapacity);
+  if (!line && Number.isFinite(attend) && Number.isFinite(cap) && cap > 0) {
+    line = `${Math.round(attend).toLocaleString()} / ${Math.round(cap).toLocaleString()}`;
+  }
+  cap = Number.isFinite(Number(cap)) ? Number(cap) : NaN;
+  if (!line || !Number.isFinite(cap) || cap <= 0) return '';
+  const venueHint = r.playerIsHome ? 'your ground' : 'away venue';
+  const crowdExtra = r.attendanceNote ? ` — ${r.attendanceNote}` : '';
+  const hintBlock = r.stadiumHint ? `<p class="stadium-hint">${r.stadiumHint}</p>` : '';
+  return `<div class="match-attendance-banner" role="status">
+    <span class="match-attendance-lbl">Attendance</span>
+    <span class="match-attendance-val"><strong>${line}</strong></span>
+    <span class="match-attendance-venue muted">(${venueHint}${crowdExtra})</span>
+    ${hintBlock}
+  </div>`;
+}
+
 function renderMatchdayHTML() {
   const r = game.state.lastMatchReport;
   if (!r) return '';
@@ -320,12 +519,7 @@ function renderMatchdayHTML() {
 
   const goalsOnly = (r.feed || []).filter((x) => String(x.text).includes('GOAL'));
 
-  const attLine =
-    r.kind === 'league' &&
-    typeof r.attendance === 'number' &&
-    typeof r.stadiumCapacity === 'number'
-      ? `<p class="match-attendance muted">Attendance: <strong>${r.attendance.toLocaleString()}</strong> / ${r.stadiumCapacity.toLocaleString()}${r.playerIsHome ? ' (your ground)' : ' (away venue)'}</p>${r.stadiumHint ? `<p class="stadium-hint muted">${r.stadiumHint}</p>` : ''}`
-      : '';
+  const attBanner = matchAttendanceMarkup(r);
 
   let body = '';
   if (matchdayTab === 'teams') {
@@ -352,7 +546,6 @@ function renderMatchdayHTML() {
     body = `
       <div class="summary-block">
         <p class="summary-score">${r.homeName} <strong>${r.homeGoals}</strong> – <strong>${r.awayGoals}</strong> ${r.awayName}</p>
-        ${attLine}
         <h4>Goals</h4>
         <ul class="goal-summary">${goalsOnly.map((g) => `<li>${g.text}</li>`).join('') || '<li class="muted">No goals</li>'}</ul>
       </div>`;
@@ -375,7 +568,7 @@ function renderMatchdayHTML() {
         <span class="score-sep">–</span>
         <div class="score-block"><span class="score-name">${r.awayName}</span><span class="score-num">${r.awayGoals}</span></div>
       </div>
-      ${matchdayTab !== 'summary' ? attLine : ''}
+      ${attBanner}
       <p class="muted matchday-you">Your club: <strong>${youName}</strong></p>
       <div class="matchday-tabs">
         <button type="button" data-mdtab="teams" class="${matchdayTab === 'teams' ? 'active' : ''}">Before</button>
@@ -585,6 +778,11 @@ function renderDashboard() {
             : ''
         }
       </p>
+      ${
+        matchCentreAvailable(s) && s.lastMatchReport?.attendanceLine
+          ? `<p class="attendance-dash-teaser muted" style="margin:0.4rem 0 0;font-size:0.9rem">Gate this match: <strong>${s.lastMatchReport.attendanceLine}</strong>${s.lastMatchReport.playerIsHome ? ' (your stadium)' : ' (venue host)'}</p>`
+          : ''
+      }
       <div class="row-actions" style="flex-wrap:wrap;gap:0.5rem">
         <button type="button" class="primary" id="open-inbox-dash">Open inbox</button>
         ${matchCentreAvailable(s) ? '<button type="button" id="open-matchday-dash">Match centre</button>' : ''}
@@ -838,16 +1036,26 @@ function renderSquad() {
     const exp = s.season > p.contractEndSeason;
     return exp ? `<span class="warn">Ended s${p.contractEndSeason}</span>` : `Through s${p.contractEndSeason}`;
   };
+  const sorted = [...s.squad].sort((a, b) => b.ovr - a.ovr);
+  const filtered = sorted.filter((p) => playerMatchesRosterFilters(p, squadListFilters));
+  const filterBar = rosterFilterBarHtml(squadListFilters, { formId: 'squad-filters', resetKey: 'squad' });
+  const countLine =
+    filtered.length === sorted.length
+      ? `<p class="muted roster-filter-count">${sorted.length} players</p>`
+      : `<p class="muted roster-filter-count">Showing <strong>${filtered.length}</strong> of ${sorted.length} — widen filters or <button type="button" class="linkish" data-reset-filters="squad">clear</button>.</p>`;
   return `
-    <div class="panel">
-      <h2>Squad (${s.squad.length})</h2>
+    <div class="panel roster-filter-panel">
+      <h2>Squad</h2>
+      <p class="muted">Filter by position, age, overall, wage, or trait.</p>
+      ${filterBar}
+      ${countLine}
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Contract</th><th>Trait</th><th>League apps</th><th>Cup / fr.</th><th>G (L)</th><th>A (L)</th><th>Av Rtg</th><th>Wage/wk</th><th></th></tr></thead>
         <tbody>
-          ${s.squad
-            .sort((a, b) => b.ovr - a.ovr)
-            .map(
-              (p) => `
+          ${
+            filtered
+              .map(
+                (p) => `
             <tr>
               <td>${p.name}${p.onLoan ? ' <span class="tag-loan">loan</span>' : ''}</td><td>${p.pos}</td><td>${p.ovr}</td><td>${p.age}</td>
               <td class="muted">${contractLabel(p)}</td>
@@ -857,8 +1065,10 @@ function renderSquad() {
               <td>${formatMoney(p.wage)}</td>
               <td><button type="button" data-release="${p.id}" ${s.squad.length <= 16 ? 'disabled' : ''}>Release</button></td>
             </tr>`
-            )
-            .join('')}
+              )
+              .join('') ||
+            `<tr><td colspan="13" class="muted">No players match these filters.</td></tr>`
+          }
         </tbody>
       </table>
       <p class="muted">Minimum 16 players. Permanent deals are at least one season when signed; loans cover the current campaign.</p>
@@ -873,17 +1083,18 @@ function renderTransfers() {
   const loans = s.loanList || [];
   const bids = s.playerBuyOffers || [];
 
-  const passFilter = (p) => transferPosFilter === 'ALL' || p.pos === transferPosFilter;
+  const f = transferListFilters;
+  const filteredPerm = perm.filter((p) => playerMatchesTransferFilters(p, f));
+  const filteredFree = free.filter((p) => playerMatchesTransferFilters(p, f));
+  const filteredLoans = loans.filter((p) => playerMatchesTransferFilters(p, f));
 
-  const filterBtns = ['ALL', ...TRANSFER_FILTER_POSITIONS]
-    .map(
-      (fk) =>
-        `<button type="button" class="pos-filter-btn ${transferPosFilter === fk ? 'active' : ''}" data-transfer-pos="${fk}" title="Filter by role">${fk}</button>`
-    )
-    .join('');
-  const filteredPerm = perm.filter(passFilter);
-  const filteredFree = free.filter(passFilter);
-  const filteredLoans = loans.filter(passFilter);
+  const countLine = (label, all, shown) =>
+    shown === all.length
+      ? `<p class="muted roster-filter-count">${all.length} on the ${label}</p>`
+      : `<p class="muted roster-filter-count">Showing <strong>${shown}</strong> of ${all.length} on the ${label}.</p>`;
+
+  const filterBar = rosterFilterBarHtml(f, { showFee: true, formId: 'transfer-filters', resetKey: 'transfer' });
+  const emptyHint = 'No players match — try clearing filters or widening age / OVR.';
   const contractSelect = (kind, p) => {
     if (kind === 'loan') return '<span class="muted">Season</span>';
     const opts = [1, 2, 3, 4, 5]
@@ -910,9 +1121,9 @@ function renderTransfers() {
             </tr>`;
   };
   return `
-    <div class="panel transfer-filter-panel">
-      <p class="transfer-filter-intro"><strong>Filter by role</strong> — permanent, free, and loan lists (GK, full-backs, wide players, pivots).</p>
-      <div class="pos-filter-bar" role="toolbar" aria-label="Position filters">${filterBtns}</div>
+    <div class="panel transfer-filter-panel roster-filter-panel">
+      <p class="transfer-filter-intro"><strong>Filters</strong> apply to permanent, free-agent, and loan lists (position, age, OVR, wage, trait, fee).</p>
+      ${filterBar}
     </div>
     <div class="panel">
       <h2>Incoming bids (other clubs)</h2>
@@ -944,39 +1155,42 @@ function renderTransfers() {
     </div>
     <div class="panel">
       <h2>Permanent transfers</h2>
+      ${countLine('permanent list', perm, filteredPerm.length)}
       <p class="muted">Full purchases — fees scale with the seller's division. A Premier League regular can cost £5–40m; a National League player rarely tops £20k. Choose contract length (minimum one year) when you complete the deal.</p>
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
           ${
             filteredPerm.map((p) => row(p, 'perm')).join('') ||
-            `<tr><td colspan="8" class="muted">No listings${transferPosFilter !== 'ALL' ? ` for ${transferPosFilter}` : ''}.</td></tr>`
+            `<tr><td colspan="8" class="muted">${perm.length ? emptyHint : 'No listings this week.'}</td></tr>`
           }
         </tbody>
       </table>
     </div>
     <div class="panel">
       <h2>Free agents</h2>
+      ${countLine('free list', free, filteredFree.length)}
       <p class="muted">No transfer fee — pay wages only. The lower the division, the more of the market arrives free (≈75% in the National League, ≈4% in the Premier League). Set contract length on signing.</p>
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
           ${
             filteredFree.map((p) => row(p, 'free')).join('') ||
-            `<tr><td colspan="8" class="muted">No free agents${transferPosFilter !== 'ALL' ? ` listed as ${transferPosFilter}` : ''}.</td></tr>`
+            `<tr><td colspan="8" class="muted">${free.length ? emptyHint : 'No free agents listed.'}</td></tr>`
           }
         </tbody>
       </table>
     </div>
     <div class="panel">
       <h2>Loan market</h2>
+      ${countLine('loan list', loans, filteredLoans.length)}
       <p class="muted">Pay a loan fee for a season-long deal. Players return when the season ends (or release early).</p>
       <table>
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Loan fee</th><th>Wage/wk</th><th>Contract</th><th></th></tr></thead>
         <tbody>
           ${
             filteredLoans.map((p) => row(p, 'loan')).join('') ||
-            `<tr><td colspan="8" class="muted">No loan offers${transferPosFilter !== 'ALL' ? ` for ${transferPosFilter}` : ''}.</td></tr>`
+            `<tr><td colspan="8" class="muted">${loans.length ? emptyHint : 'No loan offers this week.'}</td></tr>`
           }
         </tbody>
       </table>
@@ -1125,15 +1339,21 @@ function renderPyramid() {
     .join('');
 
   const team = table.find((t) => t.id === pyramidView.teamId);
-  const squad = team?.isPlayer ? s.squad : team?.squad || [];
+  const squadRaw = team?.isPlayer ? s.squad : team?.squad || [];
+  const squadSorted = [...squadRaw].sort((a, b) => b.ovr - a.ovr);
+  const squad = squadSorted.filter((p) => playerMatchesRosterFilters(p, pyramidRosterFilters));
+  const pyrFilterBar = rosterFilterBarHtml(pyramidRosterFilters, { formId: 'pyramid-filters', resetKey: 'pyramid' });
+  const pyrCount =
+    squad.length === squadSorted.length
+      ? `<p class="muted roster-filter-count">${squadSorted.length} players in squad</p>`
+      : `<p class="muted roster-filter-count">Showing <strong>${squad.length}</strong> of ${squadSorted.length} — <button type="button" class="linkish" data-reset-filters="pyramid">clear filters</button>.</p>`;
 
   const flashHtml = pyramidFlash.text
     ? `<div class="pyramid-flash ${pyramidFlash.ok ? 'flash-ok' : 'flash-bad'}"><p>${pyramidFlash.text}</p></div>`
     : '';
   pyramidFlash = { text: '', ok: false };
 
-  const rows = [...squad]
-    .sort((a, b) => b.ovr - a.ovr)
+  const rows = squad
     .map((p) => {
       const canApproach = !team?.isPlayer && (team?.squad?.length || 0) > 16;
       return `
@@ -1162,10 +1382,12 @@ function renderPyramid() {
         <label>Club <select id="pyramid-team">${teamOpts}</select></label>
       </div>
       <p class="muted" style="margin-bottom:0.75rem">Showing <strong>${ENGLISH_PYRAMID[L].name}</strong>${team ? ` · ${team.name}` : ''}</p>
+      ${pyrFilterBar}
+      ${pyrCount}
       <div id="pyramid-nego" class="pyramid-nego" aria-live="polite"></div>
       <table class="pyramid-roster">
         <thead><tr><th>Name</th><th>Pos</th><th>OVR</th><th>Age</th><th>Apps (L)</th><th>G (L)</th><th>A (L)</th><th>Av Rtg</th><th>Wage/wk</th><th>Negotiate</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="10" class="muted">No squad data</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="10" class="muted">${squadSorted.length ? 'No players match these filters.' : 'No squad data'}</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -1301,12 +1523,6 @@ function wireTab() {
   }
 
   if (currentTab === 'transfers') {
-    $$('[data-transfer-pos]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        transferPosFilter = btn.dataset.transferPos || 'ALL';
-        render();
-      });
-    });
     $$('[data-sign]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const sel = btn.closest('tr')?.querySelector('[data-contract-years]');
@@ -1464,6 +1680,22 @@ $('#btn-new')?.addEventListener('click', () => {
 
 els.main.addEventListener('change', (e) => {
   const t = e.target;
+  const filterForm = t.closest?.('.roster-filter-form');
+  if (filterForm?.id === 'transfer-filters') {
+    transferListFilters = readFiltersFromForm(filterForm, DEFAULT_TRANSFER_FILTERS);
+    render();
+    return;
+  }
+  if (filterForm?.id === 'squad-filters') {
+    squadListFilters = readFiltersFromForm(filterForm, DEFAULT_ROSTER_FILTERS);
+    render();
+    return;
+  }
+  if (filterForm?.id === 'pyramid-filters') {
+    pyramidRosterFilters = readFiltersFromForm(filterForm, DEFAULT_ROSTER_FILTERS);
+    render();
+    return;
+  }
   if (t.id === 'pyramid-league') {
     pyramidView.league = Number(t.value);
     pyramidView.teamId = '';
@@ -1480,6 +1712,17 @@ els.main.addEventListener('change', (e) => {
 });
 
 els.main.addEventListener('click', (e) => {
+  const resetF = e.target.closest('[data-reset-filters]');
+  if (resetF) {
+    const k = resetF.getAttribute('data-reset-filters');
+    if (k === 'transfer') transferListFilters = { ...DEFAULT_TRANSFER_FILTERS };
+    else if (k === 'squad') squadListFilters = { ...DEFAULT_ROSTER_FILTERS };
+    else if (k === 'pyramid') pyramidRosterFilters = { ...DEFAULT_ROSTER_FILTERS };
+    if (k === 'transfer' || k === 'squad' || k === 'pyramid') {
+      render();
+      return;
+    }
+  }
   const talks = e.target.closest('[data-open-talks]');
   if (talks) {
     const L = Number(talks.dataset.l);

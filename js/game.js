@@ -406,6 +406,7 @@ function buildLeagueMatchReport(state, home, away, hGoals, aGoals, homeRet, away
     attendance: attendanceMeta?.attendance ?? null,
     stadiumCapacity: attendanceMeta?.stadiumCapacity ?? null,
     stadiumHint: attendanceMeta?.stadiumHint ?? '',
+    attendanceLine: attendanceMeta?.attendanceLine ?? '',
     feed,
   };
 }
@@ -450,7 +451,8 @@ function buildPreSeasonFriendlyReport(
   pGoals,
   oGoals,
   playerIsHome,
-  rngFeed
+  rngFeed,
+  attendanceMeta
 ) {
   const clubName = state.table?.find((t) => t.isPlayer)?.name ?? 'Your club';
   const rngOppGoals = mulberry32(state.seed + state.week * 72_104);
@@ -509,10 +511,14 @@ function buildPreSeasonFriendlyReport(
       text: `${g.minute}' — GOAL ${tag}: ${g.scorer}${g.assist ? ` · assist ${g.assist}` : ''}`,
     });
   }
+  const ftAttendance =
+    attendanceMeta?.show && attendanceMeta.attendance != null && attendanceMeta.stadiumCapacity
+      ? ` · Attendance: ${attendanceMeta.attendance.toLocaleString()} / ${attendanceMeta.stadiumCapacity.toLocaleString()} (${attendanceMeta.friendlyCrowdNote || 'estimated'})`
+      : '';
   feed.push({
     phase: 'after',
     minute: 90,
-    text: `Full time — ${homeName} ${hGoals}–${aGoals} ${awayName}`,
+    text: `Full time — ${homeName} ${hGoals}–${aGoals} ${awayName}${ftAttendance}`,
   });
 
   return {
@@ -528,6 +534,11 @@ function buildPreSeasonFriendlyReport(
     homeGoals: hGoals,
     awayGoals: aGoals,
     playerIsHome,
+    attendance: attendanceMeta?.attendance ?? null,
+    stadiumCapacity: attendanceMeta?.stadiumCapacity ?? null,
+    stadiumHint: attendanceMeta?.stadiumHint ?? '',
+    attendanceNote: attendanceMeta?.friendlyCrowdNote ?? '',
+    attendanceLine: attendanceMeta?.attendanceLine ?? '',
     feed,
   };
 }
@@ -660,11 +671,12 @@ function defaultState() {
   let table = makeLeagueTeams(startLeague, clubName, seed);
   table = attachSquadsToTable(table, startLeague, seed);
   const teamIds = table.map((t) => t.id);
-  const leagueRounds = buildDoubleRoundRobinRounds(teamIds, seed + startLeague * 999);
+  const playerTid = table.find((t) => t.isPlayer)?.id ?? null;
+  const leagueRounds = buildDoubleRoundRobinRounds(teamIds, seed + startLeague * 999, playerTid);
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 12,
+    version: 13,
     seed,
     week: 1,
     season: 1,
@@ -761,7 +773,8 @@ function migrateToV2(s) {
   const teamIds = table.map((t) => t.id);
   const seed = s.seed || 1;
   const leagueIndex = s.leagueIndex ?? 5;
-  s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, seed + leagueIndex * 999);
+  const pid = table.find((t) => t.isPlayer)?.id ?? null;
+  s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, seed + leagueIndex * 999, pid);
   const n = s.leagueRounds.length;
   const matchesPerRound = teamIds.length / 2;
   const oldIdx = s.fixtureIndex ?? 0;
@@ -1024,26 +1037,91 @@ function estimateOpponentVenueCapacity(team, leagueIndex) {
 }
 
 function computeGateAttendanceFigures(state, homeTeam, awayTeam, rng) {
-  const cap = homeTeam.isPlayer ? state.stadiumCapacity : estimateOpponentVenueCapacity(homeTeam, state.leagueIndex);
-  const fanBase = homeTeam.isPlayer ? (state.fanBase ?? Math.round(cap * 3.35)) : Math.round(cap * 0.74);
-  const opp = awayTeam;
-  const oppStrength = opp.isPlayer
-    ? state.squad.reduce((s, p) => s + p.ovr, 0) / Math.max(1, state.squad.length)
-    : opp.squadStrength ?? 54;
-  const oppStrengthNorm = Math.max(0, Math.min(1.22, (oppStrength - 40) / 36));
-  const form = Math.max(-5, Math.min(5, homeTeam.form ?? 0));
-  const hype = oppStrengthNorm * 500 + form * 300;
-  const randomness = rng() * 2000 - 1000;
-  const attendance = Math.min(Math.max(0, Math.floor(fanBase + hype + randomness)), cap);
-  const fillRatio = cap > 0 ? attendance / cap : 0;
+  const li = state.leagueIndex ?? 5;
+  const stadiumRaw = Number(state.stadiumCapacity);
+  const stadiumSafe = Number.isFinite(stadiumRaw) && stadiumRaw >= 250 ? Math.floor(stadiumRaw) : 2800;
+
+  let cap = homeTeam.isPlayer ? stadiumSafe : estimateOpponentVenueCapacity(homeTeam, li);
+  let capNum = Number(cap);
+  if (!Number.isFinite(capNum) || capNum < 500) capNum = Math.max(stadiumSafe, 7500);
+
+  const fanStored = Number(state.fanBase);
+  const fallbackFan = Math.round(capNum * 3.25);
+  const fanBaseHome = Number.isFinite(fanStored) && fanStored >= 400 ? Math.floor(fanStored) : fallbackFan;
+
+  let fanBase = homeTeam.isPlayer ? fanBaseHome : Math.round(capNum * 0.74);
+
+  let hype = (() => {
+    const opp = awayTeam;
+    const oppStrength = opp.isPlayer
+      ? state.squad.reduce((s, p) => s + p.ovr, 0) / Math.max(1, state.squad.length)
+      : opp.squadStrength ?? 54;
+    const oppStrengthNorm = Math.max(0, Math.min(1.22, (oppStrength - 40) / 36));
+    const form = Math.max(-5, Math.min(5, homeTeam.form ?? 0));
+    return oppStrengthNorm * 460 + form * 260;
+  })();
+
+  let randomness = rng() * 2000 - 1000;
+
+  /** Pre-season friendlies — smaller turnout than league. */
+  if (homeTeam.__friendlyHost) {
+    fanBase = Math.round(fanBase * 0.42);
+    hype *= 0.38;
+    randomness *= 0.55;
+  }
+
+  let attendance = Math.min(Math.max(0, Math.floor(fanBase + hype + randomness)), capNum);
+  if (!Number.isFinite(attendance)) attendance = Math.min(capNum, Math.round(capNum * 0.72));
+
+  const fillRatio = capNum > 0 ? attendance / capNum : 0;
   const stadiumHint =
-    homeTeam.isPlayer && fillRatio > 0.95 ? 'Stadium nearly full — consider expanding when finances allow.' : '';
-  return { attendance, stadiumCapacity: cap, stadiumHint, show: true };
+    homeTeam.isPlayer && fillRatio > 0.94 && !homeTeam.__friendlyHost
+      ? 'Stadium nearly full — consider expanding when finances allow.'
+      : '';
+  const friendlyCrowdNote = homeTeam.__friendlyHost ? 'scaled for friendly' : '';
+
+  const attendanceLine = `${attendance.toLocaleString()} / ${capNum.toLocaleString()}`;
+  return {
+    attendance,
+    stadiumCapacity: capNum,
+    stadiumHint,
+    show: true,
+    friendlyCrowdNote,
+    attendanceLine,
+  };
 }
 
+/** Minimal home/away records for attendance math during friendlies — `home` must be literal host club. */
+function friendlyHostGuestTeams(state, playerIsHome, oppStrengthRounded) {
+  const pr = state.table?.find((t) => t.isPlayer);
+  if (!pr) return null;
+  const opp = {
+    isPlayer: false,
+    squadStrength: oppStrengthRounded,
+    form: 0,
+    __friendlyOpp: true,
+  };
+  const hostGhost = playerIsHome
+    ? { ...pr, __friendlyHost: true }
+    : { ...opp, __friendlyHost: true };
+  const guestGhost = playerIsHome ? opp : pr;
+  return { home: hostGhost, away: guestGhost };
+}
 function migratePlayerPositionsGranular(p, rng) {
   if (!p || !p.pos) return;
   p.pos = migrateLegacyPosition(p.pos, rng);
+}
+
+function migrateToV13(s) {
+  if ((s.version || 0) >= 13) return;
+  const sc = Number(s.stadiumCapacity);
+  if (!Number.isFinite(sc) || sc < 250) s.stadiumCapacity = 2800;
+  const fb = Number(s.fanBase);
+  if (!Number.isFinite(fb) || fb < 400) {
+    const cap = Math.max(500, s.stadiumCapacity || 2800);
+    s.fanBase = Math.min(65_000, Math.round(cap * 3.5 + (s.reputation || 12) * 420));
+  }
+  s.version = 13;
 }
 
 function migrateToV12(s) {
@@ -1094,7 +1172,8 @@ export class Game {
     const calm = s.seasonPhase === 'off_season' || s.seasonPhase === 'pre_season';
     if (!calm && !s.leagueRounds?.length && s.table?.length) {
       const teamIds = s.table.map((t) => t.id);
-      s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, s.seed + s.leagueIndex * 999);
+      const pid = s.table.find((t) => t.isPlayer)?.id ?? null;
+      s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, s.seed + s.leagueIndex * 999, pid);
       s.leagueRoundIndex = 0;
     }
     const rlen = s.leagueRounds?.length || 0;
@@ -1112,7 +1191,8 @@ export class Game {
   _buildFixturesIfNeeded() {
     const s = this.state;
     const teamIds = s.table.map((t) => t.id);
-    s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, s.seed + s.season * 11 + s.leagueIndex * 999);
+    const pid = s.table.find((t) => t.isPlayer)?.id ?? null;
+    s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, s.seed + s.season * 11 + s.leagueIndex * 999, pid);
     s.leagueRoundIndex = 0;
     s.scheduleStepIndex = 0;
     s.seasonStartYear = 2024 + s.season;
@@ -1223,7 +1303,7 @@ export class Game {
       aDef += this.managerBonus() * 0.18 + matchBoost * 0.09;
     }
 
-    const homeBonus = 0.011;
+    const homeBonus = 0.006;
     let hGoals = simulateSideGoals(hAt, aDef, rng, { homeBonus });
     let aGoals = simulateSideGoals(aAt, hDef, rng, { homeBonus: 0 });
 
@@ -1351,7 +1431,7 @@ export class Game {
 
     const playerSquadAvg = s.squad.reduce((x, p) => x + p.ovr, 0) / Math.max(1, s.squad.length);
     const pStr = playerSquadAvg + this.managerBonus() + rng() * 4;
-    const pGoals = simulateSideGoals(pStr * 0.58, oppStrength * 0.535, rng, { homeBonus: 0.012 });
+    const pGoals = simulateSideGoals(pStr * 0.58, oppStrength * 0.535, rng, { homeBonus: 0.005 });
     const oGoals = simulateSideGoals(oppStrength * 0.56, pStr * 0.528, rng, { homeBonus: 0 });
 
     s.cash += Math.floor(this.matchdayRevenue(0.88));
@@ -1441,6 +1521,12 @@ export class Game {
     const playerRet = recordSquadMatchStats(s.squad, pGoals, oGoals, rng, 'friendly');
     const playerIsHome = rng() < 0.52;
     const weekNum = PRE_SEASON_WEEKS - (s.phaseWeeksLeft ?? 0);
+    const oppStrengthRounded = Math.round(oppStrength);
+    const pairing = friendlyHostGuestTeams(s, playerIsHome, oppStrengthRounded);
+    const attRng = mulberry32(s.seed + s.week * 72_097);
+    const attendanceMeta = pairing
+      ? computeGateAttendanceFigures(s, pairing.home, pairing.away, attRng)
+      : { attendance: null, stadiumCapacity: null, stadiumHint: '', show: false, attendanceLine: '', friendlyCrowdNote: '' };
     const rngFeed = mulberry32(s.seed + s.week * 72_099);
     const row = this.playerRow();
     const yn = row?.name || s.clubName;
@@ -1454,7 +1540,8 @@ export class Game {
       pGoals,
       oGoals,
       playerIsHome,
-      rngFeed
+      rngFeed,
+      attendanceMeta
     );
     const scoreTxt = playerIsHome ? `${yn} ${pGoals}-${oGoals} ${oppName}` : `${oppName} ${oGoals}-${pGoals} ${yn}`;
     s.history.unshift({
@@ -2724,6 +2811,7 @@ export class Game {
         migrateToV10(this.state);
         migrateToV11(this.state);
         migrateToV12(this.state);
+        migrateToV13(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);
