@@ -134,6 +134,74 @@ function flipFixtureForTeam(round, playerTeamId) {
   return true;
 }
 
+function cloneRounds(rounds) {
+  return rounds.map((round) => round.map((p) => ({ home: p.home, away: p.away })));
+}
+
+/** @returns {{ max: number, cost: number }} longest same-venue run and sum of run lengths² (lower is smoother). */
+function venueStreakMetrics(rounds, playerTeamId) {
+  if (!playerTeamId || !rounds?.length) return { max: 0, cost: 0 };
+  const seq = [];
+  for (const round of rounds) {
+    const h = playerHomeInFixture(round, playerTeamId);
+    if (h !== null) seq.push(h);
+  }
+  if (!seq.length) return { max: 0, cost: 0 };
+  let max = 1;
+  let cost = 0;
+  let i = 0;
+  while (i < seq.length) {
+    let j = i + 1;
+    while (j < seq.length && seq[j] === seq[i]) j++;
+    const len = j - i;
+    max = Math.max(max, len);
+    cost += len * len;
+    i = j;
+  }
+  return { max, cost };
+}
+
+function shuffleRoundsOrder(rounds, rng) {
+  const idx = rounds.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  return idx.map((i) => rounds[i].map((p) => ({ home: p.home, away: p.away })));
+}
+
+/**
+ * Reorder second-half rounds (each round is still the correct return leg for some first-half week).
+ * Any permutation is valid; we pick one that keeps the player's home/away runs short when appended
+ * after the first half.
+ */
+function bestSecondHalfOrdering(roundsFirst, roundsSecond, playerTeamId, seed) {
+  if (!playerTeamId || !roundsSecond.length) return roundsSecond;
+  const rng = mulberry32((seed + 8281) >>> 0);
+  const candidates = [];
+  const push = (arr) => candidates.push(cloneRounds(arr));
+  push(roundsSecond);
+  push([...roundsSecond].reverse());
+  for (let k = 0; k < roundsSecond.length; k++) {
+    push([...roundsSecond.slice(k), ...roundsSecond.slice(0, k)]);
+  }
+  for (let t = 0; t < 96; t++) {
+    push(shuffleRoundsOrder(roundsSecond, rng));
+  }
+  let best = cloneRounds(roundsSecond);
+  let bestScore = Infinity;
+  for (const cand of candidates) {
+    const full = [...roundsFirst, ...cand];
+    const { max, cost } = venueStreakMetrics(full, playerTeamId);
+    const score = max * 100_000 + cost;
+    if (score < bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  return best;
+}
+
 /** Break long home-only or away-only runs for the player's club (first half only; second half remains strict reverse). */
 export function squashPlayerVenueStreaks(roundsFirst, playerTeamId, maxSame = 2) {
   if (!playerTeamId || !roundsFirst?.length || maxSame < 1) return;
@@ -168,7 +236,8 @@ export function squashPlayerVenueStreaks(roundsFirst, playerTeamId, maxSame = 2)
 
 /**
  * Double round-robin as weekly rounds (each round: every team plays once).
- * Second half mirrors the first by swapping venues. Player venue streaks are capped in the first half.
+ * Second half uses reversed pairings from the first half; second-half **week order** is optimized so
+ * the player does not get long home or away runs (especially across the mid-season break).
  */
 export function buildDoubleRoundRobinRounds(teamIds, seed, playerTeamId = null) {
   const rng = mulberry32(seed + 333);
@@ -181,19 +250,44 @@ export function buildDoubleRoundRobinRounds(teamIds, seed, playerTeamId = null) 
   if (n < 2 || n % 2 !== 0) {
     return [];
   }
-  const roundsFirst = [];
+  const baseFirst = [];
   const order = [...teams];
   for (let r = 0; r < n - 1; r++) {
     const pairs = [];
     for (let i = 0; i < n / 2; i++) {
       pairs.push({ home: order[i], away: order[n - 1 - i] });
     }
-    roundsFirst.push(pairs);
+    baseFirst.push(pairs);
     order.splice(1, 0, order.pop());
   }
-  squashPlayerVenueStreaks(roundsFirst, playerTeamId, 2);
-  const roundsSecond = roundsFirst.map((round) => round.map(({ home, away }) => ({ home: away, away: home })));
-  return [...roundsFirst, ...roundsSecond];
+
+  const m = baseFirst.length;
+  const rngTry = mulberry32((seed + 5555) >>> 0);
+  let bestFull = null;
+  let bestScore = Infinity;
+
+  const considerFirstOrder = (roundsFirstRaw) => {
+    const rf = cloneRounds(roundsFirstRaw);
+    squashPlayerVenueStreaks(rf, playerTeamId, 2);
+    const rsBase = rf.map((round) => round.map(({ home, away }) => ({ home: away, away: home })));
+    const rsOpt = bestSecondHalfOrdering(rf, rsBase, playerTeamId, seed);
+    const full = [...rf, ...rsOpt];
+    const { max, cost } = venueStreakMetrics(full, playerTeamId);
+    const score = max * 100_000 + cost;
+    if (score < bestScore) {
+      bestScore = score;
+      bestFull = full;
+    }
+  };
+
+  for (let k = 0; k < m; k++) {
+    considerFirstOrder([...baseFirst.slice(k), ...baseFirst.slice(0, k)]);
+  }
+  for (let t = 0; t < 40; t++) {
+    considerFirstOrder(shuffleRoundsOrder(baseFirst, rngTry));
+  }
+
+  return bestFull || [];
 }
 
 export function makeLeagueTeams(leagueIndex, playerClubName, seed) {

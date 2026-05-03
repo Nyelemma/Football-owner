@@ -676,7 +676,7 @@ function defaultState() {
   const acq = generateAcquisitionSlots(mulberry32(seed + 777), 0);
 
   const st = {
-    version: 13,
+    version: 14,
     seed,
     week: 1,
     season: 1,
@@ -1122,6 +1122,23 @@ function migrateToV13(s) {
     s.fanBase = Math.min(65_000, Math.round(cap * 3.5 + (s.reputation || 12) * 420));
   }
   s.version = 13;
+}
+
+/** Rebuild league schedule with improved home/away balance for the player (v14 fixture generator). */
+function migrateToV14(s) {
+  if ((s.version || 0) >= 14) return;
+  const calm = s.seasonPhase === 'off_season' || s.seasonPhase === 'pre_season';
+  if (!calm && s.table?.length && Array.isArray(s.leagueRounds) && s.leagueRounds.length) {
+    const teamIds = s.table.map((t) => t.id);
+    const pid = s.table.find((t) => t.isPlayer)?.id ?? null;
+    const rrSeed = s.seed + (s.season || 0) * 11 + (s.leagueIndex || 0) * 999;
+    s.leagueRounds = buildDoubleRoundRobinRounds(teamIds, rrSeed, pid);
+    const nm = ENGLISH_PYRAMID[s.leagueIndex ?? 0].name;
+    s.scheduleSteps = buildScheduleSteps(s, nm);
+    s.fixtureSchedule = s.scheduleSteps;
+    s.scheduleStepIndex = computeScheduleStepIndex(s, nm);
+  }
+  s.version = 14;
 }
 
 function migrateToV12(s) {
@@ -2812,6 +2829,7 @@ export class Game {
         migrateToV11(this.state);
         migrateToV12(this.state);
         migrateToV13(this.state);
+        migrateToV14(this.state);
         this._ensureLeagueSchedule();
         if (!this.state.acquisitionOffers?.length) {
           const acq = generateAcquisitionSlots(mulberry32(this.state.seed + 888), this.state.acquisitionNextUid || 0);
